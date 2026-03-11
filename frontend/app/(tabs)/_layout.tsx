@@ -1,26 +1,22 @@
-import { Tabs, useRouter } from 'expo-router';
-import { useEffect } from 'react';
+import { Tabs, Redirect } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { Colors } from '../../constants/theme';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, ActivityIndicator } from 'react-native';
 
 export default function TabLayout() {
   const { user, isLoading } = useAuth();
-  const router = useRouter();
 
-  useEffect(() => {
-    if (!isLoading && !user) {
-      router.replace('/');
-    }
-  }, [user, isLoading]);
-
-  if (isLoading || !user) {
+  if (isLoading) {
     return (
       <View style={s.loader}>
         <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
+  }
+
+  if (!user) {
+    return <Redirect href="/" />;
   }
 
   const isAdmin = user.role === 'admin';

@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput, StyleSheet, ScrollView,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, Redirect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -54,11 +54,9 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
 
-  useEffect(() => {
-    if (user && !isLoading) {
-      router.replace('/(tabs)');
-    }
-  }, [user, isLoading]);
+  if (!isLoading && user) {
+    return <Redirect href="/(tabs)" />;
+  }
 
   if (isLoading) {
     return (
