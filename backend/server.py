@@ -57,6 +57,18 @@ class FileEditRequest(BaseModel):
     description: Optional[str] = None
     tahsildar_location: Optional[str] = None
 
+class AdminFileEditRequest(BaseModel):
+    applicant_name: Optional[str] = None
+    applicant_phone: Optional[str] = None
+    applicant_address: Optional[str] = None
+    description: Optional[str] = None
+    tahsildar_location: Optional[str] = None
+    status: Optional[str] = None
+    is_locked: Optional[bool] = None
+    dc_decision: Optional[str] = None
+    dc_remark: Optional[str] = None
+    adc_remark: Optional[str] = None
+
 class ApprovalRequest(BaseModel):
     decision: str
     remark: str = ""
@@ -586,6 +598,60 @@ async def get_analytics(user=Depends(get_current_user)):
         "approved": approved, "rejected": rejected, "delayed": delayed,
         "department_pending": dept_pending,
     }
+
+# ==================== ADMIN FILE MANAGEMENT ====================
+
+@api_router.put("/admin/files/{file_id}")
+async def admin_full_edit_file(file_id: str, req: AdminFileEditRequest, user=Depends(require_admin)):
+    file_doc = await db.files.find_one({"id": file_id}, {"_id": 0})
+    if not file_doc:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    updates = {}
+    for field in ["applicant_name", "applicant_phone", "applicant_address", "description", "tahsildar_location", "status", "dc_decision", "dc_remark", "adc_remark"]:
+        val = getattr(req, field, None)
+        if val is not None:
+            updates[field] = val
+
+    if req.is_locked is not None:
+        updates["is_locked"] = req.is_locked
+
+    if updates:
+        await db.files.update_one({"id": file_id}, {"$set": updates})
+        await log_audit(user["id"], user["display_name"], user["role"], "admin_edit_file", file_id, file_doc["file_number"], f"Admin modified: {', '.join(updates.keys())}")
+
+    updated = await db.files.find_one({"id": file_id}, {"_id": 0})
+    return updated
+
+@api_router.delete("/admin/files/{file_id}")
+async def admin_delete_file(file_id: str, user=Depends(require_admin)):
+    file_doc = await db.files.find_one({"id": file_id}, {"_id": 0})
+    if not file_doc:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    await db.files.delete_one({"id": file_id})
+    await db.approvals.delete_many({"file_id": file_id})
+    await db.notifications.delete_many({"file_id": file_id})
+
+    await log_audit(user["id"], user["display_name"], user["role"], "admin_delete_file", file_id, file_doc["file_number"], f"Deleted file {file_doc['file_number']} ({file_doc['applicant_name']})")
+    return {"message": f"File {file_doc['file_number']} deleted successfully"}
+
+@api_router.put("/admin/files/{file_id}/approval/{approval_id}")
+async def admin_override_approval(file_id: str, approval_id: str, req: ApprovalRequest, user=Depends(require_admin)):
+    approval = await db.approvals.find_one({"id": approval_id, "file_id": file_id}, {"_id": 0})
+    if not approval:
+        raise HTTPException(status_code=404, detail="Approval not found")
+
+    now = datetime.now(timezone.utc).isoformat()
+    await db.approvals.update_one({"id": approval_id}, {"$set": {
+        "decision": req.decision, "remark": req.remark,
+        "decided_by": user["id"], "decided_at": now, "is_locked": True,
+    }})
+
+    file_doc = await db.files.find_one({"id": file_id}, {"_id": 0})
+    fn = file_doc["file_number"] if file_doc else ""
+    await log_audit(user["id"], user["display_name"], user["role"], "admin_override_approval", file_id, fn, f"Admin overrode {approval['department']} approval to {req.decision}")
+    return {"message": "Approval overridden successfully"}
 
 @api_router.get("/admin/credentials")
 async def get_credentials(user=Depends(require_admin)):
