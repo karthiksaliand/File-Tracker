@@ -40,6 +40,13 @@ A secure, role-based Government File Tracking application for Dakshina Kannada D
 9. **Audit Trail**: Full action logging with timestamps
 10. **File Locking**: Files locked after submission, only admin can override
 
+## Admin Full Control
+- **Edit All Properties**: Admin can modify every field - applicant name, phone, address, description, tahsildar location, status, lock state, DC decision/remark, ADC remark
+- **Delete Files**: Permanently removes file + all approvals + notifications
+- **Override Approvals**: Admin can override any department's approval decision
+- **Status Control**: Change file status (draft, submitted, delayed, approved, rejected)
+- **Lock/Unlock**: Toggle file lock state at any stage
+
 ## API Endpoints
 - `POST /api/auth/login` - Login
 - `GET /api/auth/me` - Current user
@@ -55,6 +62,9 @@ A secure, role-based Government File Tracking application for Dakshina Kannada D
 - `GET /api/admin/users` - User management
 - `POST /api/admin/users/{id}/reset-password` - Reset password
 - `GET /api/admin/analytics` - Dashboard stats
+- `PUT /api/admin/files/{id}` - Admin full edit (all properties)
+- `DELETE /api/admin/files/{id}` - Admin delete file
+- `PUT /api/admin/files/{id}/approval/{aid}` - Admin override approval
 
 ## Screens
 1. Login (Role Selection)
