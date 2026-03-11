@@ -255,7 +255,7 @@ async def create_file(req: FileCreateRequest, user=Depends(get_current_user)):
     return file_doc
 
 @api_router.get("/files")
-async def list_files(user=Depends(get_current_user), status: Optional[str] = None, search: Optional[str] = None):
+async def list_files(user=Depends(get_current_user), status: Optional[str] = None, search: Optional[str] = None, limit: int = 100, skip: int = 0):
     query = {}
     role = user["role"]
     dept = user["department"]
@@ -279,7 +279,11 @@ async def list_files(user=Depends(get_current_user), status: Optional[str] = Non
             {"applicant_name": {"$regex": search, "$options": "i"}},
         ]
 
-    files = await db.files.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    projection = {"_id": 0, "id": 1, "file_number": 1, "applicant_name": 1, "applicant_phone": 1,
+                  "applicant_address": 1, "description": 1, "tahsildar_location": 1, "status": 1,
+                  "is_locked": 1, "created_by": 1, "created_by_name": 1, "created_at": 1,
+                  "submitted_at": 1, "deadline": 1, "dc_decision": 1}
+    files = await db.files.find(query, projection).sort("created_at", -1).skip(skip).limit(min(limit, 200)).to_list(min(limit, 200))
 
     for f in files:
         if f["status"] != "draft":
@@ -509,9 +513,11 @@ def build_notif_query(role, dept, read_filter=None):
     return q
 
 @api_router.get("/notifications")
-async def get_notifications(user=Depends(get_current_user)):
+async def get_notifications(user=Depends(get_current_user), limit: int = 50, skip: int = 0):
     q = build_notif_query(user["role"], user["department"])
-    return await db.notifications.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
+    projection = {"_id": 0, "id": 1, "target_role": 1, "target_department": 1, "file_id": 1,
+                  "file_number": 1, "type": 1, "title": 1, "message": 1, "is_read": 1, "created_at": 1}
+    return await db.notifications.find(q, projection).sort("created_at", -1).skip(skip).limit(min(limit, 200)).to_list(min(limit, 200))
 
 @api_router.get("/notifications/unread-count")
 async def get_unread_count(user=Depends(get_current_user)):
@@ -532,8 +538,8 @@ async def mark_all_read(user=Depends(get_current_user)):
 # ==================== ADMIN ROUTES ====================
 
 @api_router.get("/admin/users")
-async def list_users(user=Depends(require_admin)):
-    return await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(100)
+async def list_users(user=Depends(require_admin), limit: int = 100, skip: int = 0):
+    return await db.users.find({}, {"_id": 0, "password_hash": 0}).skip(skip).limit(min(limit, 200)).to_list(min(limit, 200))
 
 @api_router.post("/admin/users")
 async def create_user(req: UserCreateRequest, user=Depends(require_admin)):
@@ -577,8 +583,8 @@ async def toggle_active(user_id: str, user=Depends(require_admin)):
     return {"message": f"User {'activated' if new_status else 'deactivated'}", "is_active": new_status}
 
 @api_router.get("/admin/audit-logs")
-async def get_audit_logs(user=Depends(require_admin), limit: int = 200):
-    return await db.audit_logs.find({}, {"_id": 0}).sort("timestamp", -1).to_list(limit)
+async def get_audit_logs(user=Depends(require_admin), limit: int = 100, skip: int = 0):
+    return await db.audit_logs.find({}, {"_id": 0}).sort("timestamp", -1).skip(skip).limit(min(limit, 500)).to_list(min(limit, 500))
 
 @api_router.get("/admin/analytics")
 async def get_analytics(user=Depends(get_current_user)):
@@ -669,7 +675,10 @@ async def reminder_and_escalation_task():
             await asyncio.sleep(300)
             now = datetime.now(timezone.utc)
 
-            submitted_files = await db.files.find({"status": "submitted"}, {"_id": 0}).to_list(500)
+            submitted_files = await db.files.find(
+                {"status": "submitted"},
+                {"_id": 0, "id": 1, "file_number": 1, "deadline": 1, "tahsildar_location": 1}
+            ).to_list(500)
 
             for file_doc in submitted_files:
                 if not file_doc.get("deadline"):
