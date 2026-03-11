@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput, StyleSheet, ScrollView,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
+  KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { useRouter, Redirect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { Colors, Spacing, Radius } from '../constants/theme';
+import { AppDialog } from '../components/AppDialog';
 
 const TAHSILDAR_LOCATIONS = [
   'Mangaluru', 'Bantwal', 'Mulki', 'Moodabidri',
@@ -53,6 +54,7 @@ export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
+  const [errorDialog, setErrorDialog] = useState<{ visible: boolean; title: string; message: string }>({ visible: false, title: '', message: '' });
 
   if (!isLoading && user) {
     return <Redirect href="/(tabs)" />;
@@ -98,14 +100,14 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (!username.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please enter username and password');
+      setErrorDialog({ visible: true, title: 'Error', message: 'Please enter username and password' });
       return;
     }
     setLoggingIn(true);
     try {
       await login(username.trim(), password.trim());
     } catch (e: any) {
-      Alert.alert('Login Failed', e.message || 'Invalid credentials');
+      setErrorDialog({ visible: true, title: 'Login Failed', message: e.message || 'Invalid credentials' });
     } finally {
       setLoggingIn(false);
     }
@@ -230,6 +232,16 @@ export default function LoginScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <AppDialog
+        visible={errorDialog.visible}
+        title={errorDialog.title}
+        message={errorDialog.message}
+        buttons={[
+          { text: 'OK', onPress: () => setErrorDialog({ ...errorDialog, visible: false }) },
+        ]}
+        onDismiss={() => setErrorDialog({ ...errorDialog, visible: false })}
+      />
     </SafeAreaView>
   );
 }

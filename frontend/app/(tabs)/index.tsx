@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Alert,
+  ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -9,6 +9,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { fetchAPI } from '../../constants/api';
 import { Colors, Spacing, Radius, StatusColors, StatusLabels } from '../../constants/theme';
+import { AppDialog } from '../../components/AppDialog';
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
@@ -18,8 +19,11 @@ export default function Dashboard() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const loadData = useCallback(async () => {
+    if (isLoggingOut) return;
     try {
       const [stats, files, notifs] = await Promise.all([
         fetchAPI('/admin/analytics'),
@@ -29,31 +33,34 @@ export default function Dashboard() {
       setAnalytics(stats);
       setRecentFiles(files.slice(0, 5));
       setUnreadCount(notifs.count);
-
-      if (notifs.count > 0) {
-        Alert.alert('Notifications', `You have ${notifs.count} unread notification(s)`, [
-          { text: 'View', onPress: () => router.push('/(tabs)/notifications') },
-          { text: 'Dismiss', style: 'cancel' },
-        ]);
-      }
     } catch (e: any) {
       console.error(e);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [isLoggingOut]);
 
   useFocusEffect(useCallback(() => {
-    setLoading(true);
-    loadData();
-  }, [loadData]));
+    if (!isLoggingOut) {
+      setLoading(true);
+      loadData();
+    }
+  }, [loadData, isLoggingOut]));
 
   const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: async () => { await logout(); router.replace('/'); } },
-    ]);
+    setShowLogoutDialog(true);
+  };
+
+  const confirmLogout = async () => {
+    setIsLoggingOut(true);
+    setShowLogoutDialog(false);
+    try {
+      await logout();
+    } catch (e) {
+      console.error('Logout error:', e);
+    }
+    router.replace('/');
   };
 
   if (loading && !refreshing) {
@@ -171,6 +178,18 @@ export default function Dashboard() {
           )}
         </View>
       </ScrollView>
+
+      {/* Logout Dialog */}
+      <AppDialog
+        visible={showLogoutDialog}
+        title="Logout"
+        message="Are you sure you want to logout?"
+        buttons={[
+          { text: 'Cancel', style: 'cancel', onPress: () => setShowLogoutDialog(false) },
+          { text: 'Logout', style: 'destructive', onPress: confirmLogout },
+        ]}
+        onDismiss={() => setShowLogoutDialog(false)}
+      />
     </SafeAreaView>
   );
 }

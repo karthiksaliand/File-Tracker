@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Modal, FlatList,
+  TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, Modal, FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { fetchAPI } from '../constants/api';
 import { Colors, Spacing, Radius } from '../constants/theme';
+import { AppDialog } from '../components/AppDialog';
 
 const LOCATIONS = [
   'Mangaluru', 'Bantwal', 'Mulki', 'Moodabidri',
@@ -23,10 +24,16 @@ export default function CreateFileScreen() {
   const [showPicker, setShowPicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [dialog, setDialog] = useState<{ visible: boolean; title: string; message: string; onOk?: () => void }>({ visible: false, title: '', message: '' });
+  const [confirmSubmit, setConfirmSubmit] = useState(false);
+
+  const showDialog = (title: string, message: string, onOk?: () => void) => {
+    setDialog({ visible: true, title, message, onOk });
+  };
 
   const handleSaveDraft = async () => {
     if (!fileNo.trim() || !year.trim() || !description.trim() || !tahsildarLocation) {
-      Alert.alert('Validation', 'Please fill in File No, Year, Description, and select a Tahsildar');
+      showDialog('Validation', 'Please fill in File No, Year, Description, and select a Tahsildar');
       return;
     }
     setSaving(true);
@@ -40,11 +47,9 @@ export default function CreateFileScreen() {
           tahsildar_location: tahsildarLocation,
         }),
       });
-      Alert.alert('Success', 'File saved as draft', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      showDialog('Success', 'File saved as draft', () => router.back());
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      showDialog('Error', e.message);
     } finally {
       setSaving(false);
     }
@@ -52,41 +57,32 @@ export default function CreateFileScreen() {
 
   const handleCreateAndSubmit = async () => {
     if (!fileNo.trim() || !year.trim() || !description.trim() || !tahsildarLocation) {
-      Alert.alert('Validation', 'Please fill in File No, Year, Description, and select a Tahsildar');
+      showDialog('Validation', 'Please fill in File No, Year, Description, and select a Tahsildar');
       return;
     }
-    Alert.alert(
-      'Submit File',
-      'Once submitted, the file will be locked and sent to departments. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Submit',
-          onPress: async () => {
-            setSubmitting(true);
-            try {
-              const file = await fetchAPI('/files', {
-                method: 'POST',
-                body: JSON.stringify({
-                  file_no: fileNo.trim(),
-                  year: year.trim(),
-                  description: description.trim(),
-                  tahsildar_location: tahsildarLocation,
-                }),
-              });
-              await fetchAPI(`/files/${file.id}/submit`, { method: 'POST' });
-              Alert.alert('Success', `File ${file.file_number} submitted!`, [
-                { text: 'OK', onPress: () => router.back() },
-              ]);
-            } catch (e: any) {
-              Alert.alert('Error', e.message);
-            } finally {
-              setSubmitting(false);
-            }
-          },
-        },
-      ],
-    );
+    setConfirmSubmit(true);
+  };
+
+  const doSubmit = async () => {
+    setConfirmSubmit(false);
+    setSubmitting(true);
+    try {
+      const file = await fetchAPI('/files', {
+        method: 'POST',
+        body: JSON.stringify({
+          file_no: fileNo.trim(),
+          year: year.trim(),
+          description: description.trim(),
+          tahsildar_location: tahsildarLocation,
+        }),
+      });
+      await fetchAPI(`/files/${file.id}/submit`, { method: 'POST' });
+      showDialog('Success', `File ${file.file_number} submitted!`, () => router.back());
+    } catch (e: any) {
+      showDialog('Error', e.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -209,6 +205,29 @@ export default function CreateFileScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Generic Dialog */}
+      <AppDialog
+        visible={dialog.visible}
+        title={dialog.title}
+        message={dialog.message}
+        buttons={[
+          { text: 'OK', onPress: () => { setDialog({ ...dialog, visible: false }); dialog.onOk?.(); } },
+        ]}
+        onDismiss={() => { setDialog({ ...dialog, visible: false }); dialog.onOk?.(); }}
+      />
+
+      {/* Submit Confirmation Dialog */}
+      <AppDialog
+        visible={confirmSubmit}
+        title="Submit File"
+        message="Once submitted, the file will be locked and sent to departments. Continue?"
+        buttons={[
+          { text: 'Cancel', style: 'cancel', onPress: () => setConfirmSubmit(false) },
+          { text: 'Submit', onPress: doSubmit },
+        ]}
+        onDismiss={() => setConfirmSubmit(false)}
+      />
     </SafeAreaView>
   );
 }

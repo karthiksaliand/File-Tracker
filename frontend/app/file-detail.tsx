@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Alert, ActivityIndicator, Modal, KeyboardAvoidingView, Platform, FlatList,
+  TextInput, ActivityIndicator, Modal, KeyboardAvoidingView, Platform, FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -9,6 +9,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { fetchAPI } from '../constants/api';
 import { Colors, Spacing, Radius, StatusColors, StatusLabels } from '../constants/theme';
+import { AppDialog } from '../components/AppDialog';
 
 const LOCATIONS = [
   'Mangaluru', 'Bantwal', 'Mulki', 'Moodabidri',
@@ -31,6 +32,17 @@ export default function FileDetailScreen() {
   const [showLocPicker, setShowLocPicker] = useState(false);
   const [showStatusPicker, setShowStatusPicker] = useState(false);
 
+  // Dialog states
+  const [dialog, setDialog] = useState<{ visible: boolean; title: string; message: string; onOk?: () => void }>({ visible: false, title: '', message: '' });
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmSubmitFile, setConfirmSubmitFile] = useState(false);
+  const [confirmDC, setConfirmDC] = useState<{ visible: boolean; decision: string }>({ visible: false, decision: '' });
+  const [confirmOverride, setConfirmOverride] = useState<{ visible: boolean; approval: any }>({ visible: false, approval: null });
+
+  const showDialog = (title: string, message: string, onOk?: () => void) => {
+    setDialog({ visible: true, title, message, onOk });
+  };
+
   useEffect(() => { loadFile(); }, [id]);
 
   const loadFile = async () => {
@@ -38,7 +50,7 @@ export default function FileDetailScreen() {
       const data = await fetchAPI(`/files/${id}`);
       setFile(data);
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      showDialog('Error', e.message);
     } finally {
       setLoading(false);
     }
@@ -66,66 +78,49 @@ export default function FileDetailScreen() {
         method: 'PUT',
         body: JSON.stringify(editData),
       });
-      Alert.alert('Success', 'File updated by admin');
+      showDialog('Success', 'File updated by admin');
       setEditModal(false);
       loadFile();
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      showDialog('Error', e.message);
     } finally {
       setActionLoading(false);
     }
   };
 
   const deleteFile = () => {
-    Alert.alert(
-      'Delete File',
-      `Are you sure you want to permanently delete ${file.file_number}? This will also remove all approvals and notifications.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete', style: 'destructive',
-          onPress: async () => {
-            setActionLoading(true);
-            try {
-              await fetchAPI(`/admin/files/${id}`, { method: 'DELETE' });
-              Alert.alert('Deleted', 'File deleted successfully', [
-                { text: 'OK', onPress: () => router.back() },
-              ]);
-            } catch (e: any) {
-              Alert.alert('Error', e.message);
-            } finally {
-              setActionLoading(false);
-            }
-          },
-        },
-      ],
-    );
+    setConfirmDelete(true);
+  };
+
+  const doDeleteFile = async () => {
+    setConfirmDelete(false);
+    setActionLoading(true);
+    try {
+      await fetchAPI(`/admin/files/${id}`, { method: 'DELETE' });
+      showDialog('Deleted', 'File deleted successfully', () => router.back());
+    } catch (e: any) {
+      showDialog('Error', e.message);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const overrideApproval = (approval: any) => {
-    Alert.alert(
-      `Override ${approval.department.toUpperCase()} Approval`,
-      'Choose a new decision:',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'YES', onPress: () => doOverrideApproval(approval.id, 'yes') },
-        { text: 'NO', onPress: () => doOverrideApproval(approval.id, 'no') },
-        { text: 'N/A', onPress: () => doOverrideApproval(approval.id, 'na') },
-      ],
-    );
+    setConfirmOverride({ visible: true, approval });
   };
 
   const doOverrideApproval = async (approvalId: string, decision: string) => {
+    setConfirmOverride({ visible: false, approval: null });
     setActionLoading(true);
     try {
       await fetchAPI(`/admin/files/${id}/approval/${approvalId}`, {
         method: 'PUT',
         body: JSON.stringify({ decision, remark: 'Admin override' }),
       });
-      Alert.alert('Success', 'Approval overridden');
+      showDialog('Success', 'Approval overridden');
       loadFile();
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      showDialog('Error', e.message);
     } finally {
       setActionLoading(false);
     }
@@ -138,78 +133,73 @@ export default function FileDetailScreen() {
         method: 'POST',
         body: JSON.stringify({ decision, remark }),
       });
-      Alert.alert('Success', 'Approval submitted');
+      showDialog('Success', 'Approval submitted');
       setRemark('');
       loadFile();
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      showDialog('Error', e.message);
     } finally {
       setActionLoading(false);
     }
   };
 
   const submitADCRemark = async () => {
-    if (!remark.trim()) { Alert.alert('Error', 'Please enter a remark'); return; }
+    if (!remark.trim()) { showDialog('Error', 'Please enter a remark'); return; }
     setActionLoading(true);
     try {
       await fetchAPI(`/files/${id}/adc-remark`, {
         method: 'POST',
         body: JSON.stringify({ remark }),
       });
-      Alert.alert('Success', 'Remark added');
+      showDialog('Success', 'Remark added');
       setRemark('');
       loadFile();
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      showDialog('Error', e.message);
     } finally {
       setActionLoading(false);
     }
   };
 
   const submitDCDecision = async (decision: string) => {
-    Alert.alert('Confirm Decision', `Are you sure you want to ${decision} this file?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: decision.charAt(0).toUpperCase() + decision.slice(1),
-        onPress: async () => {
-          setActionLoading(true);
-          try {
-            await fetchAPI(`/files/${id}/dc-decision`, {
-              method: 'POST',
-              body: JSON.stringify({ decision, remark }),
-            });
-            Alert.alert('Success', `File ${decision}ed`);
-            setRemark('');
-            loadFile();
-          } catch (e: any) {
-            Alert.alert('Error', e.message);
-          } finally {
-            setActionLoading(false);
-          }
-        },
-      },
-    ]);
+    setConfirmDC({ visible: true, decision });
+  };
+
+  const doSubmitDCDecision = async () => {
+    const decision = confirmDC.decision;
+    setConfirmDC({ visible: false, decision: '' });
+    setActionLoading(true);
+    try {
+      await fetchAPI(`/files/${id}/dc-decision`, {
+        method: 'POST',
+        body: JSON.stringify({ decision, remark }),
+      });
+      showDialog('Success', `File ${decision}ed`);
+      setRemark('');
+      loadFile();
+    } catch (e: any) {
+      showDialog('Error', e.message);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const submitFile = async () => {
-    Alert.alert('Submit File', 'This will lock the file and send it to departments. Continue?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Submit',
-        onPress: async () => {
-          setActionLoading(true);
-          try {
-            await fetchAPI(`/files/${id}/submit`, { method: 'POST' });
-            Alert.alert('Success', 'File submitted');
-            loadFile();
-          } catch (e: any) {
-            Alert.alert('Error', e.message);
-          } finally {
-            setActionLoading(false);
-          }
-        },
-      },
-    ]);
+    setConfirmSubmitFile(true);
+  };
+
+  const doSubmitFile = async () => {
+    setConfirmSubmitFile(false);
+    setActionLoading(true);
+    try {
+      await fetchAPI(`/files/${id}/submit`, { method: 'POST' });
+      showDialog('Success', 'File submitted');
+      loadFile();
+    } catch (e: any) {
+      showDialog('Error', e.message);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   if (loading) {
@@ -607,6 +597,66 @@ export default function FileDetailScreen() {
           </View>
         </Modal>
       </Modal>
+
+      {/* Generic Dialog */}
+      <AppDialog
+        visible={dialog.visible}
+        title={dialog.title}
+        message={dialog.message}
+        buttons={[
+          { text: 'OK', onPress: () => { setDialog({ ...dialog, visible: false }); dialog.onOk?.(); } },
+        ]}
+        onDismiss={() => { setDialog({ ...dialog, visible: false }); dialog.onOk?.(); }}
+      />
+
+      {/* Delete Confirmation */}
+      <AppDialog
+        visible={confirmDelete}
+        title="Delete File"
+        message={`Are you sure you want to permanently delete ${file?.file_number}? This will remove all approvals and notifications.`}
+        buttons={[
+          { text: 'Cancel', style: 'cancel', onPress: () => setConfirmDelete(false) },
+          { text: 'Delete', style: 'destructive', onPress: doDeleteFile },
+        ]}
+        onDismiss={() => setConfirmDelete(false)}
+      />
+
+      {/* Submit File Confirmation */}
+      <AppDialog
+        visible={confirmSubmitFile}
+        title="Submit File"
+        message="This will lock the file and send it to departments. Continue?"
+        buttons={[
+          { text: 'Cancel', style: 'cancel', onPress: () => setConfirmSubmitFile(false) },
+          { text: 'Submit', onPress: doSubmitFile },
+        ]}
+        onDismiss={() => setConfirmSubmitFile(false)}
+      />
+
+      {/* DC Decision Confirmation */}
+      <AppDialog
+        visible={confirmDC.visible}
+        title="Confirm Decision"
+        message={`Are you sure you want to ${confirmDC.decision} this file?`}
+        buttons={[
+          { text: 'Cancel', style: 'cancel', onPress: () => setConfirmDC({ visible: false, decision: '' }) },
+          { text: confirmDC.decision === 'reject' ? 'Reject' : 'Accept', style: confirmDC.decision === 'reject' ? 'destructive' : 'default', onPress: doSubmitDCDecision },
+        ]}
+        onDismiss={() => setConfirmDC({ visible: false, decision: '' })}
+      />
+
+      {/* Override Approval */}
+      <AppDialog
+        visible={confirmOverride.visible}
+        title={`Override ${confirmOverride.approval?.department?.toUpperCase() || ''} Approval`}
+        message="Choose a new decision:"
+        buttons={[
+          { text: 'Cancel', style: 'cancel', onPress: () => setConfirmOverride({ visible: false, approval: null }) },
+          { text: 'YES', onPress: () => doOverrideApproval(confirmOverride.approval?.id, 'yes') },
+          { text: 'NO', style: 'destructive', onPress: () => doOverrideApproval(confirmOverride.approval?.id, 'no') },
+        ]}
+        onDismiss={() => setConfirmOverride({ visible: false, approval: null })}
+      />
     </SafeAreaView>
   );
 }
