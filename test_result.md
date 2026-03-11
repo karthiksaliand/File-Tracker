@@ -101,3 +101,179 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: "Government File Tracking Web Application with role-based access. Key changes: 1) Refactored file creation from applicant_name/phone/address to file_no/year/description fields, 2) Fixed logout bug (async await), 3) Updated search to work with file_no."
+
+backend:
+  - task: "Auth Login API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "JWT auth with role-based access. POST /api/auth/login"
+      - working: true
+        agent: "testing"
+        comment: "✅ ALL AUTH TESTS PASSED - Tested 6 user roles (caseworker, admin, tah_mangaluru, sp, forest, dc). All logins successful with proper tokens and role validation."
+
+  - task: "File Creation with new fields (file_no, year, description)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "POST /api/files now expects file_no, year, description, tahsildar_location. Old applicant fields removed."
+      - working: true
+        agent: "testing"
+        comment: "✅ FILE CREATION TESTS PASSED - New fields (file_no, year, description, tahsildar_location) working correctly. Created test file DK/FILE/2025/TEST123. Old applicant fields correctly rejected with 422 status."
+
+  - task: "File List with search by file_no"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "GET /api/files supports search param that queries file_number, file_no, and description"
+      - working: true
+        agent: "testing"
+        comment: "✅ FILE LIST & SEARCH TESTS PASSED - Retrieved 12 files successfully. Search by file_no working correctly (found 1 file matching 'TEST123')."
+
+  - task: "File Submit and Parallel Approvals"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "POST /api/files/{id}/submit, POST /api/files/{id}/approval"
+      - working: true
+        agent: "testing"
+        comment: "✅ FILE SUBMIT & APPROVALS TESTS PASSED - File submission working (status changed to 'submitted', locked=true). All 3 parallel approvals working (tahsildar: yes, sp: yes, forest: no) with proper decision recording."
+
+  - task: "Admin File Edit/Delete"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "PUT/DELETE /api/admin/files/{id}. Fixed bug where admin_delete_file referenced non-existent applicant_name field."
+      - working: true
+        agent: "testing"
+        comment: "✅ ADMIN FILE OPERATIONS TESTS PASSED - Admin edit working correctly with new fields (file_no, year updated, file_number regenerated properly DK/FILE/2026/ADMIN123). Admin delete working successfully."
+
+  - task: "DC Decision"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "POST /api/files/{id}/dc-decision"
+      - working: true
+        agent: "testing"
+        comment: "✅ DC DECISION TESTS PASSED - DC can make decisions (accept/reject) with remarks. Tested with accept decision, received proper success message."
+
+  - task: "Admin User Management"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "CRUD for users. GET/POST /api/admin/users"
+      - working: "NA"
+        agent: "testing"
+        comment: "NOT TESTED - Low priority user management APIs not included in current test focus. Main file tracking workflow is fully functional."
+
+frontend:
+  - task: "File Creation Form (file_no, year, description)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/create-file.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Replaced applicant name/phone/address with File No, Year, Description inputs"
+
+  - task: "Logout functionality fix"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Added await to async logout() call before router.replace"
+
+  - task: "File Detail View updated fields"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/file-detail.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Updated info card and admin edit modal from applicant fields to file_no/year"
+
+  - task: "File List View updated fields"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/(tabs)/files.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Replaced applicant_name with description in file cards"
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 1
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Frontend testing (if requested by user)"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: "Completed refactoring backend and frontend from applicant_name/phone/address to file_no/year/description. Fixed admin_delete_file bug. Fixed logout async issue. Please test all backend APIs with focus on file creation, editing, searching, and deletion with the new field schema. Default credentials - caseworker:case123, admin:admin123, sp:sp123, forest:forest123, dc:dc123, adc:adc123, tahsildar (tah_mangaluru):tah123"
+  - agent: "testing"
+    message: "🎉 ALL BACKEND TESTS PASSED (17/17 - 100% success rate)! Complete workflow tested: Auth → File Creation (new fields) → Search → Submit → Parallel Approvals (tahsildar/sp/forest) → DC Decision → Admin Edit/Delete. All APIs working perfectly with new field schema (file_no/year/description/tahsildar_location). Old applicant fields correctly rejected. Backend is production-ready!"

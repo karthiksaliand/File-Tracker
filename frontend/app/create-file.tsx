@@ -16,9 +16,8 @@ const LOCATIONS = [
 
 export default function CreateFileScreen() {
   const router = useRouter();
-  const [applicantName, setApplicantName] = useState('');
-  const [applicantPhone, setApplicantPhone] = useState('');
-  const [applicantAddress, setApplicantAddress] = useState('');
+  const [fileNo, setFileNo] = useState('');
+  const [year, setYear] = useState(new Date().getFullYear().toString());
   const [description, setDescription] = useState('');
   const [tahsildarLocation, setTahsildarLocation] = useState('');
   const [showPicker, setShowPicker] = useState(false);
@@ -26,8 +25,8 @@ export default function CreateFileScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   const handleSaveDraft = async () => {
-    if (!applicantName.trim() || !description.trim() || !tahsildarLocation) {
-      Alert.alert('Validation', 'Please fill in applicant name, description, and select a Tahsildar');
+    if (!fileNo.trim() || !year.trim() || !description.trim() || !tahsildarLocation) {
+      Alert.alert('Validation', 'Please fill in File No, Year, Description, and select a Tahsildar');
       return;
     }
     setSaving(true);
@@ -35,9 +34,8 @@ export default function CreateFileScreen() {
       await fetchAPI('/files', {
         method: 'POST',
         body: JSON.stringify({
-          applicant_name: applicantName.trim(),
-          applicant_phone: applicantPhone.trim(),
-          applicant_address: applicantAddress.trim(),
+          file_no: fileNo.trim(),
+          year: year.trim(),
           description: description.trim(),
           tahsildar_location: tahsildarLocation,
         }),
@@ -53,8 +51,8 @@ export default function CreateFileScreen() {
   };
 
   const handleCreateAndSubmit = async () => {
-    if (!applicantName.trim() || !description.trim() || !tahsildarLocation) {
-      Alert.alert('Validation', 'Please fill in applicant name, description, and select a Tahsildar');
+    if (!fileNo.trim() || !year.trim() || !description.trim() || !tahsildarLocation) {
+      Alert.alert('Validation', 'Please fill in File No, Year, Description, and select a Tahsildar');
       return;
     }
     Alert.alert(
@@ -70,9 +68,8 @@ export default function CreateFileScreen() {
               const file = await fetchAPI('/files', {
                 method: 'POST',
                 body: JSON.stringify({
-                  applicant_name: applicantName.trim(),
-                  applicant_phone: applicantPhone.trim(),
-                  applicant_address: applicantAddress.trim(),
+                  file_no: fileNo.trim(),
+                  year: year.trim(),
                   description: description.trim(),
                   tahsildar_location: tahsildarLocation,
                 }),
@@ -106,40 +103,27 @@ export default function CreateFileScreen() {
 
         <ScrollView contentContainerStyle={s.form} keyboardShouldPersistTaps="handled">
           <View style={s.inputGroup}>
-            <Text style={s.label}>APPLICANT NAME *</Text>
+            <Text style={s.label}>FILE NO *</Text>
             <TextInput
-              testID="applicant-name-input"
+              testID="file-no-input"
               style={s.input}
-              value={applicantName}
-              onChangeText={setApplicantName}
-              placeholder="Full name of applicant"
+              value={fileNo}
+              onChangeText={setFileNo}
+              placeholder="Enter file number"
               placeholderTextColor={Colors.mutedForeground}
             />
           </View>
 
           <View style={s.inputGroup}>
-            <Text style={s.label}>PHONE NUMBER</Text>
+            <Text style={s.label}>YEAR *</Text>
             <TextInput
-              testID="applicant-phone-input"
+              testID="year-input"
               style={s.input}
-              value={applicantPhone}
-              onChangeText={setApplicantPhone}
-              placeholder="Phone number"
+              value={year}
+              onChangeText={setYear}
+              placeholder="e.g. 2025"
               placeholderTextColor={Colors.mutedForeground}
-              keyboardType="phone-pad"
-            />
-          </View>
-
-          <View style={s.inputGroup}>
-            <Text style={s.label}>ADDRESS</Text>
-            <TextInput
-              testID="applicant-address-input"
-              style={[s.input, s.textArea]}
-              value={applicantAddress}
-              onChangeText={setApplicantAddress}
-              placeholder="Address"
-              placeholderTextColor={Colors.mutedForeground}
-              multiline
+              keyboardType="number-pad"
             />
           </View>
 

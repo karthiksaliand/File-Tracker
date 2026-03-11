@@ -44,23 +44,20 @@ class LoginRequest(BaseModel):
     password: str
 
 class FileCreateRequest(BaseModel):
-    applicant_name: str
-    applicant_phone: str = ""
-    applicant_address: str = ""
+    file_no: str
+    year: str
     description: str
     tahsildar_location: str
 
 class FileEditRequest(BaseModel):
-    applicant_name: Optional[str] = None
-    applicant_phone: Optional[str] = None
-    applicant_address: Optional[str] = None
+    file_no: Optional[str] = None
+    year: Optional[str] = None
     description: Optional[str] = None
     tahsildar_location: Optional[str] = None
 
 class AdminFileEditRequest(BaseModel):
-    applicant_name: Optional[str] = None
-    applicant_phone: Optional[str] = None
-    applicant_address: Optional[str] = None
+    file_no: Optional[str] = None
+    year: Optional[str] = None
     description: Optional[str] = None
     tahsildar_location: Optional[str] = None
     status: Optional[str] = None
@@ -210,11 +207,8 @@ async def get_me(user=Depends(get_current_user)):
 
 # ==================== FILE ROUTES ====================
 
-async def generate_file_number():
-    year = datetime.now(timezone.utc).year
-    prefix = f"DK/FILE/{year}/"
-    count = await db.files.count_documents({"file_number": {"$regex": f"^{prefix}"}})
-    return f"{prefix}{str(count + 1).zfill(4)}"
+async def generate_file_number(file_no: str, year: str):
+    return f"DK/FILE/{year}/{file_no}"
 
 @api_router.post("/files")
 async def create_file(req: FileCreateRequest, user=Depends(get_current_user)):
@@ -224,13 +218,12 @@ async def create_file(req: FileCreateRequest, user=Depends(get_current_user)):
     if req.tahsildar_location not in TAHSILDAR_LOCATIONS:
         raise HTTPException(status_code=400, detail="Invalid tahsildar location")
 
-    file_number = await generate_file_number()
+    file_number = await generate_file_number(req.file_no, req.year)
     file_doc = {
         "id": str(uuid.uuid4()),
         "file_number": file_number,
-        "applicant_name": req.applicant_name,
-        "applicant_phone": req.applicant_phone,
-        "applicant_address": req.applicant_address,
+        "file_no": req.file_no,
+        "year": req.year,
         "description": req.description,
         "tahsildar_location": req.tahsildar_location,
         "status": "draft",
@@ -249,7 +242,7 @@ async def create_file(req: FileCreateRequest, user=Depends(get_current_user)):
         "adc_remark_by": None,
     }
     await db.files.insert_one(file_doc)
-    await log_audit(user["id"], user["display_name"], user["role"], "create_file", file_doc["id"], file_number, f"Created file for {req.applicant_name}")
+    await log_audit(user["id"], user["display_name"], user["role"], "create_file", file_doc["id"], file_number, f"Created file {file_number}")
 
     file_doc.pop("_id", None)
     return file_doc
@@ -276,11 +269,12 @@ async def list_files(user=Depends(get_current_user), status: Optional[str] = Non
     if search:
         query["$or"] = [
             {"file_number": {"$regex": search, "$options": "i"}},
-            {"applicant_name": {"$regex": search, "$options": "i"}},
+            {"file_no": {"$regex": search, "$options": "i"}},
+            {"description": {"$regex": search, "$options": "i"}},
         ]
 
-    projection = {"_id": 0, "id": 1, "file_number": 1, "applicant_name": 1, "applicant_phone": 1,
-                  "applicant_address": 1, "description": 1, "tahsildar_location": 1, "status": 1,
+    projection = {"_id": 0, "id": 1, "file_number": 1, "file_no": 1, "year": 1,
+                  "description": 1, "tahsildar_location": 1, "status": 1,
                   "is_locked": 1, "created_by": 1, "created_by_name": 1, "created_at": 1,
                   "submitted_at": 1, "deadline": 1, "dc_decision": 1}
     files = await db.files.find(query, projection).sort("created_at", -1).skip(skip).limit(min(limit, 200)).to_list(min(limit, 200))
@@ -326,10 +320,16 @@ async def edit_file(file_id: str, req: FileEditRequest, user=Depends(get_current
         raise HTTPException(status_code=403, detail="No edit permission")
 
     updates = {}
-    for field in ["applicant_name", "applicant_phone", "applicant_address", "description", "tahsildar_location"]:
+    for field in ["file_no", "year", "description", "tahsildar_location"]:
         val = getattr(req, field)
         if val is not None:
             updates[field] = val
+
+    # Regenerate file_number if file_no or year changed
+    if "file_no" in updates or "year" in updates:
+        new_file_no = updates.get("file_no", file_doc.get("file_no", ""))
+        new_year = updates.get("year", file_doc.get("year", ""))
+        updates["file_number"] = f"DK/FILE/{new_year}/{new_file_no}"
 
     if updates:
         await db.files.update_one({"id": file_id}, {"$set": updates})
@@ -614,13 +614,19 @@ async def admin_full_edit_file(file_id: str, req: AdminFileEditRequest, user=Dep
         raise HTTPException(status_code=404, detail="File not found")
 
     updates = {}
-    for field in ["applicant_name", "applicant_phone", "applicant_address", "description", "tahsildar_location", "status", "dc_decision", "dc_remark", "adc_remark"]:
+    for field in ["file_no", "year", "description", "tahsildar_location", "status", "dc_decision", "dc_remark", "adc_remark"]:
         val = getattr(req, field, None)
         if val is not None:
             updates[field] = val
 
     if req.is_locked is not None:
         updates["is_locked"] = req.is_locked
+
+    # Regenerate file_number if file_no or year changed
+    if "file_no" in updates or "year" in updates:
+        new_file_no = updates.get("file_no", file_doc.get("file_no", ""))
+        new_year = updates.get("year", file_doc.get("year", ""))
+        updates["file_number"] = f"DK/FILE/{new_year}/{new_file_no}"
 
     if updates:
         await db.files.update_one({"id": file_id}, {"$set": updates})
@@ -639,7 +645,7 @@ async def admin_delete_file(file_id: str, user=Depends(require_admin)):
     await db.approvals.delete_many({"file_id": file_id})
     await db.notifications.delete_many({"file_id": file_id})
 
-    await log_audit(user["id"], user["display_name"], user["role"], "admin_delete_file", file_id, file_doc["file_number"], f"Deleted file {file_doc['file_number']} ({file_doc['applicant_name']})")
+    await log_audit(user["id"], user["display_name"], user["role"], "admin_delete_file", file_id, file_doc["file_number"], f"Deleted file {file_doc['file_number']}")
     return {"message": f"File {file_doc['file_number']} deleted successfully"}
 
 @api_router.put("/admin/files/{file_id}/approval/{approval_id}")

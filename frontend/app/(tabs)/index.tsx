@@ -52,7 +52,7 @@ export default function Dashboard() {
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: () => { logout(); router.replace('/'); } },
+      { text: 'Logout', style: 'destructive', onPress: async () => { await logout(); router.replace('/'); } },
     ]);
   };
 
@@ -160,7 +160,7 @@ export default function Dashboard() {
                     <Text style={s.statusText}>{StatusLabels[file.status] || file.status}</Text>
                   </View>
                 </View>
-                <Text style={s.applicantName}>{file.applicant_name}</Text>
+                <Text style={s.applicantName} numberOfLines={1}>{file.description}</Text>
                 {file.deadline && file.status === 'submitted' && (
                   <Text style={s.deadlineText}>
                     Deadline: {Math.max(0, Math.ceil((new Date(file.deadline).getTime() - Date.now()) / 86400000))} days left

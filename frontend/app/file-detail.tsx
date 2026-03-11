@@ -46,9 +46,8 @@ export default function FileDetailScreen() {
 
   const openEditModal = () => {
     setEditData({
-      applicant_name: file.applicant_name,
-      applicant_phone: file.applicant_phone || '',
-      applicant_address: file.applicant_address || '',
+      file_no: file.file_no || '',
+      year: file.year || '',
       description: file.description,
       tahsildar_location: file.tahsildar_location,
       status: file.status,
@@ -306,12 +305,11 @@ export default function FileDetailScreen() {
           </View>
         )}
 
-        {/* Applicant Info */}
+        {/* File Info */}
         <View style={s.card}>
-          <Text style={s.cardTitle}>APPLICANT DETAILS</Text>
-          <InfoRow label="Name" value={file.applicant_name} />
-          <InfoRow label="Phone" value={file.applicant_phone || 'N/A'} />
-          <InfoRow label="Address" value={file.applicant_address || 'N/A'} />
+          <Text style={s.cardTitle}>FILE DETAILS</Text>
+          <InfoRow label="File No" value={file.file_no || 'N/A'} />
+          <InfoRow label="Year" value={file.year || 'N/A'} />
           <InfoRow label="Description" value={file.description} />
           <InfoRow label="Tahsildar" value={file.tahsildar_location} />
           <InfoRow label="Status" value={StatusLabels[file.status] || file.status} />
@@ -475,18 +473,13 @@ export default function FileDetailScreen() {
               <Text style={s.editSectionTitle}>FILE PROPERTIES</Text>
 
               <View style={s.editField}>
-                <Text style={s.editLabel}>APPLICANT NAME</Text>
-                <TextInput testID="edit-name" style={s.editInput} value={editData.applicant_name} onChangeText={(v) => setEditData({ ...editData, applicant_name: v })} />
+                <Text style={s.editLabel}>FILE NO</Text>
+                <TextInput testID="edit-file-no" style={s.editInput} value={editData.file_no} onChangeText={(v) => setEditData({ ...editData, file_no: v })} />
               </View>
 
               <View style={s.editField}>
-                <Text style={s.editLabel}>PHONE</Text>
-                <TextInput testID="edit-phone" style={s.editInput} value={editData.applicant_phone} onChangeText={(v) => setEditData({ ...editData, applicant_phone: v })} keyboardType="phone-pad" />
-              </View>
-
-              <View style={s.editField}>
-                <Text style={s.editLabel}>ADDRESS</Text>
-                <TextInput testID="edit-address" style={[s.editInput, { height: 72, textAlignVertical: 'top' }]} value={editData.applicant_address} onChangeText={(v) => setEditData({ ...editData, applicant_address: v })} multiline />
+                <Text style={s.editLabel}>YEAR</Text>
+                <TextInput testID="edit-year" style={s.editInput} value={editData.year} onChangeText={(v) => setEditData({ ...editData, year: v })} keyboardType="number-pad" />
               </View>
 
               <View style={s.editField}>

@@ -14,7 +14,7 @@ if frontend_env_path.exists():
                 break
 
 if not BASE_URL:
-    BASE_URL = "https://case-flow-manager-2.preview.emergentagent.com"
+    BASE_URL = "https://file-approval-hub-1.preview.emergentagent.com"
 
 @pytest.fixture
 def api_client():

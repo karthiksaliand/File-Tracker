@@ -65,7 +65,7 @@ export default function FilesScreen() {
         <View style={s.fileRow}>
           <View style={{ flex: 1 }}>
             <Text style={s.fileNumber}>{item.file_number}</Text>
-            <Text style={s.applicant}>{item.applicant_name}</Text>
+            <Text style={s.applicant} numberOfLines={1}>{item.description}</Text>
             <Text style={s.meta}>{item.tahsildar_location} | {new Date(item.created_at).toLocaleDateString()}</Text>
           </View>
           <View style={s.rightCol}>
@@ -108,7 +108,7 @@ export default function FilesScreen() {
         <TextInput
           testID="search-input"
           style={s.searchInput}
-          placeholder="Search by file number or name..."
+          placeholder="Search by file number..."
           placeholderTextColor={Colors.mutedForeground}
           value={search}
           onChangeText={setSearch}
