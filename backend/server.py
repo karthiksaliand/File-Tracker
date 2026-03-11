@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 import uuid
 from datetime import datetime, timezone, timedelta
-from passlib.context import CryptContext
+import bcrypt
 from jose import jwt, JWTError
 
 ROOT_DIR = Path(__file__).parent
@@ -24,7 +24,11 @@ JWT_SECRET = os.environ.get('JWT_SECRET', str(uuid.uuid4()))
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 24
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -160,7 +164,7 @@ async def seed_default_users():
         await db.users.insert_one({
             "id": str(uuid.uuid4()),
             "username": u["username"],
-            "password_hash": pwd_context.hash(u["password"]),
+            "password_hash": hash_password(u["password"]),
             "role": u["role"],
             "display_name": u["display_name"],
             "department": u["department"],
@@ -175,7 +179,7 @@ async def seed_default_users():
 @api_router.post("/auth/login")
 async def login(req: LoginRequest):
     user = await db.users.find_one({"username": req.username}, {"_id": 0})
-    if not user or not pwd_context.verify(req.password, user["password_hash"]):
+    if not user or not verify_password(req.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not user.get("is_active"):
         raise HTTPException(status_code=403, detail="Account deactivated")
@@ -279,12 +283,22 @@ async def list_files(user=Depends(get_current_user), status: Optional[str] = Non
                   "submitted_at": 1, "deadline": 1, "dc_decision": 1}
     files = await db.files.find(query, projection).sort("created_at", -1).skip(skip).limit(min(limit, 200)).to_list(min(limit, 200))
 
+    # Batch fetch all approvals for non-draft files (avoids N+1 query)
+    non_draft_ids = [f["id"] for f in files if f["status"] != "draft"]
+    approvals_by_file = {}
+    if non_draft_ids:
+        all_approvals = await db.approvals.find({"file_id": {"$in": non_draft_ids}}, {"_id": 0}).to_list(len(non_draft_ids) * 3)
+        for appr in all_approvals:
+            if appr["file_id"] not in approvals_by_file:
+                approvals_by_file[appr["file_id"]] = []
+            approvals_by_file[appr["file_id"]].append(appr)
+
     for f in files:
         if f["status"] != "draft":
-            approvals = await db.approvals.find({"file_id": f["id"]}, {"_id": 0}).to_list(10)
+            file_approvals = approvals_by_file.get(f["id"], [])
             f["approvals_summary"] = {
                 a["department"]: {"decision": a["decision"], "department_detail": a.get("department_detail", "")}
-                for a in approvals
+                for a in file_approvals
             }
         else:
             f["approvals_summary"] = {}
@@ -549,7 +563,7 @@ async def create_user(req: UserCreateRequest, user=Depends(require_admin)):
     new_user = {
         "id": str(uuid.uuid4()),
         "username": req.username,
-        "password_hash": pwd_context.hash(req.password),
+        "password_hash": hash_password(req.password),
         "role": req.role,
         "display_name": req.display_name,
         "department": req.department,
@@ -567,7 +581,7 @@ async def reset_password(user_id: str, req: PasswordResetRequest, user=Depends(r
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
 
-    await db.users.update_one({"id": user_id}, {"$set": {"password_hash": pwd_context.hash(req.new_password)}})
+    await db.users.update_one({"id": user_id}, {"$set": {"password_hash": hash_password(req.new_password)}})
     await log_audit(user["id"], user["display_name"], user["role"], "reset_password", details=f"Reset password for: {target['username']}")
     return {"message": "Password reset successfully"}
 
