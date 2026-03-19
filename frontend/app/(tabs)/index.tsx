@@ -9,7 +9,6 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { fetchAPI } from '../../constants/api';
 import { Colors, Spacing, Radius, StatusColors, StatusLabels } from '../../constants/theme';
-import { AppDialog } from '../../components/AppDialog';
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
@@ -19,7 +18,7 @@ export default function Dashboard() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -48,9 +47,9 @@ export default function Dashboard() {
     }
   }, [loadData, isLoggingOut]));
 
-  const confirmLogout = async () => {
+  const doLogout = async () => {
     setIsLoggingOut(true);
-    setShowLogoutDialog(false);
+    setShowLogoutConfirm(false);
     try { await logout(); } catch (e) { console.error(e); }
     router.replace('/');
   };
@@ -88,9 +87,21 @@ export default function Dashboard() {
             <MaterialCommunityIcons name="bell-outline" size={22} color={Colors.foreground} />
             {unreadCount > 0 && <View style={s.badge}><Text style={s.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text></View>}
           </TouchableOpacity>
-          <TouchableOpacity testID="logout-btn" onPress={() => setShowLogoutDialog(true)} style={s.iconBtn}>
-            <MaterialCommunityIcons name="logout" size={22} color={Colors.destructive} />
-          </TouchableOpacity>
+          {!showLogoutConfirm ? (
+            <TouchableOpacity testID="logout-btn" onPress={() => setShowLogoutConfirm(true)} style={s.iconBtn}>
+              <MaterialCommunityIcons name="logout" size={22} color={Colors.destructive} />
+            </TouchableOpacity>
+          ) : (
+            <View style={s.logoutConfirmRow}>
+              <TouchableOpacity testID="logout-cancel" onPress={() => setShowLogoutConfirm(false)} style={s.logoutCancelBtn}>
+                <Text style={s.logoutCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity testID="logout-confirm" onPress={doLogout} style={s.logoutConfirmBtn}>
+                <MaterialCommunityIcons name="logout" size={14} color="#FFF" />
+                <Text style={s.logoutConfirmText}>Logout</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         <View style={s.content}>
@@ -182,17 +193,6 @@ export default function Dashboard() {
           )}
         </View>
       </ScrollView>
-
-      <AppDialog
-        visible={showLogoutDialog}
-        title="Logout"
-        message="Are you sure you want to logout?"
-        buttons={[
-          { text: 'Cancel', style: 'cancel', onPress: () => setShowLogoutDialog(false) },
-          { text: 'Logout', style: 'destructive', onPress: confirmLogout },
-        ]}
-        onDismiss={() => setShowLogoutDialog(false)}
-      />
     </SafeAreaView>
   );
 }
@@ -277,6 +277,11 @@ const s = StyleSheet.create({
   greeting: { fontSize: 17, fontWeight: '700', color: Colors.foreground },
   roleText: { fontSize: 11, color: Colors.mutedForeground, fontWeight: '600', letterSpacing: 0.5 },
   iconBtn: { padding: 8, position: 'relative' },
+  logoutConfirmRow: { flexDirection: 'row', gap: 6, alignItems: 'center' },
+  logoutCancelBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border },
+  logoutCancelText: { fontSize: 12, fontWeight: '600', color: Colors.mutedForeground },
+  logoutConfirmBtn: { flexDirection: 'row', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, backgroundColor: '#DC2626', alignItems: 'center' },
+  logoutConfirmText: { fontSize: 12, fontWeight: '700', color: '#FFF' },
   badge: { position: 'absolute', top: 2, right: 2, backgroundColor: '#DC2626', borderRadius: 8, minWidth: 16, height: 16, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 3 },
   badgeText: { fontSize: 9, fontWeight: '800', color: '#FFF' },
   content: { paddingHorizontal: Spacing.md, paddingBottom: 40 },
