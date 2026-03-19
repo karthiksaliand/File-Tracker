@@ -1,550 +1,516 @@
 #!/usr/bin/env python3
 """
-Backend API Testing for Government File Tracking Application
-Tests all high-priority backend APIs with proper authentication workflow
+Comprehensive Backend API Testing for Government File Tracking System
+Testing NEW features: departments, priority, approve/reject decisions, ADC decisions, admin user edit, admin config, analytics
 """
 
 import requests
 import json
 import sys
-from typing import Dict, Any, Optional
+from datetime import datetime
 
-# Use the production URL from frontend .env
+# Backend URL from frontend/.env
 BASE_URL = "https://file-approval-hub-1.preview.emergentagent.com/api"
 
-class BackendTester:
-    def __init__(self):
-        self.session = requests.Session()
-        self.tokens = {}
-        self.test_file_id = None
-        self.test_results = {
-            "passed": [],
-            "failed": [],
-            "errors": []
-        }
-        
-    def log_result(self, test_name: str, success: bool, details: str = "", error: str = ""):
-        """Log test results"""
-        result = {
-            "test": test_name,
-            "details": details,
-            "error": error
-        }
-        if success:
-            self.test_results["passed"].append(result)
-            print(f"✅ {test_name}: {details}")
+# Test credentials from backend code
+TEST_USERS = {
+    "caseworker": {"username": "caseworker", "password": "case123"},
+    "admin": {"username": "admin", "password": "admin123"},
+    "sp": {"username": "sp", "password": "sp123"},
+    "forest": {"username": "forest", "password": "forest123"},
+    "dc": {"username": "dc", "password": "dc123"},
+    "adc": {"username": "adc", "password": "adc123"},
+    "tah_mangaluru": {"username": "tah_mangaluru", "password": "tah123"}
+}
+
+def log_test(test_name, status, details=""):
+    """Log test results with timestamp"""
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    symbol = "✅" if status == "PASS" else "❌" if status == "FAIL" else "⚠️"
+    print(f"[{timestamp}] {symbol} {test_name}")
+    if details:
+        print(f"    {details}")
+
+def login_user(role):
+    """Login and return token for specified role"""
+    creds = TEST_USERS[role]
+    response = requests.post(f"{BASE_URL}/auth/login", json=creds)
+    if response.status_code == 200:
+        data = response.json()
+        return data["token"], data["user"]
+    else:
+        log_test(f"Login {role}", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+        return None, None
+
+def auth_headers(token):
+    """Return authorization headers"""
+    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+def test_auth_logins():
+    """Test 1: Auth Login - All roles"""
+    print("\n=== TEST 1: AUTH LOGIN - ALL ROLES ===")
+    
+    all_passed = True
+    tokens = {}
+    users = {}
+    
+    for role in TEST_USERS.keys():
+        token, user = login_user(role)
+        if token:
+            log_test(f"Login {role}", "PASS", f"Role: {user['role']}, Display: {user['display_name']}")
+            tokens[role] = token
+            users[role] = user
         else:
-            self.test_results["failed"].append(result)
-            print(f"❌ {test_name}: {error}")
+            log_test(f"Login {role}", "FAIL", "Authentication failed")
+            all_passed = False
     
-    def make_request(self, method: str, endpoint: str, data: Dict = None, 
-                    auth_token: str = None, params: Dict = None) -> Dict[str, Any]:
-        """Make HTTP request with proper error handling"""
-        url = f"{BASE_URL}{endpoint}"
-        headers = {"Content-Type": "application/json"}
-        
-        if auth_token:
-            headers["Authorization"] = f"Bearer {auth_token}"
-            
-        try:
-            if method.upper() == "GET":
-                response = self.session.get(url, headers=headers, params=params)
-            elif method.upper() == "POST":
-                response = self.session.post(url, headers=headers, json=data)
-            elif method.upper() == "PUT":
-                response = self.session.put(url, headers=headers, json=data)
-            elif method.upper() == "DELETE":
-                response = self.session.delete(url, headers=headers)
-            else:
-                raise ValueError(f"Unsupported method: {method}")
-                
-            return {
-                "status_code": response.status_code,
-                "data": response.json() if response.content else {},
-                "success": 200 <= response.status_code < 300
-            }
-        except requests.exceptions.RequestException as e:
-            return {
-                "status_code": 0,
-                "data": {},
-                "success": False,
-                "error": str(e)
-            }
-        except json.JSONDecodeError:
-            return {
-                "status_code": response.status_code,
-                "data": {"raw_response": response.text},
-                "success": 200 <= response.status_code < 300
-            }
+    return all_passed, tokens, users
+
+def test_file_creation_with_departments_priority(tokens):
+    """Test 2: NEW - File creation with departments + priority"""
+    print("\n=== TEST 2: FILE CREATION WITH DEPARTMENTS + PRIORITY ===")
     
-    def test_auth_login(self):
-        """Test authentication for different user roles"""
-        print("\n🔐 Testing Authentication...")
-        
-        test_users = [
-            {"username": "caseworker", "password": "case123", "role": "case_worker"},
-            {"username": "admin", "password": "admin123", "role": "admin"},
-            {"username": "tah_mangaluru", "password": "tah123", "role": "tahsildar"},
-            {"username": "sp", "password": "sp123", "role": "sp"},
-            {"username": "forest", "password": "forest123", "role": "forest_officer"},
-            {"username": "dc", "password": "dc123", "role": "dc"}
-        ]
-        
-        auth_success = True
-        for user in test_users:
-            result = self.make_request("POST", "/auth/login", {
-                "username": user["username"],
-                "password": user["password"]
-            })
-            
-            if result["success"] and "token" in result["data"]:
-                self.tokens[user["role"]] = result["data"]["token"]
-                user_info = result["data"].get("user", {})
-                self.log_result(
-                    f"Auth Login - {user['username']}", 
-                    True, 
-                    f"Role: {user_info.get('role', 'unknown')}, Token received"
-                )
-            else:
-                auth_success = False
-                error_msg = result["data"].get("detail", result.get("error", "Unknown error"))
-                self.log_result(
-                    f"Auth Login - {user['username']}", 
-                    False, 
-                    error=f"Status: {result['status_code']}, Error: {error_msg}"
-                )
-        
-        return auth_success
+    if 'caseworker' not in tokens:
+        log_test("File creation", "FAIL", "No caseworker token available")
+        return False, None
     
-    def test_file_creation_new_fields(self):
-        """Test file creation with new fields (file_no, year, description, tahsildar_location)"""
-        print("\n📁 Testing File Creation with New Fields...")
+    # Test high priority file with selected departments
+    file_data = {
+        "file_no": "PRI001",
+        "year": "2025", 
+        "description": "High priority test file with selected departments",
+        "tahsildar_location": "Mangaluru",
+        "departments": ["tahsildar", "sp"],  # NEW: Only tahsildar and sp, NOT forest
+        "priority": "high"  # NEW: High priority
+    }
+    
+    response = requests.post(
+        f"{BASE_URL}/files", 
+        json=file_data,
+        headers=auth_headers(tokens['caseworker'])
+    )
+    
+    if response.status_code == 200:
+        file_doc = response.json()
+        expected_fields = ['departments', 'priority', 'file_no', 'year', 'description']
+        missing_fields = [field for field in expected_fields if field not in file_doc]
         
-        if "case_worker" not in self.tokens:
-            self.log_result("File Creation", False, error="No case_worker token available")
-            return False
-            
-        # Test with new required fields
-        file_data = {
-            "file_no": "TEST123",
-            "year": "2025",
-            "description": "Test file for backend validation",
-            "tahsildar_location": "Mangaluru"
-        }
+        if missing_fields:
+            log_test("File creation", "FAIL", f"Missing fields in response: {missing_fields}")
+            return False, None
         
-        result = self.make_request(
-            "POST", "/files", file_data, 
-            auth_token=self.tokens["case_worker"]
-        )
-        
-        if result["success"]:
-            file_info = result["data"]
-            if all(key in file_info for key in ["id", "file_number", "file_no", "year", "description", "tahsildar_location"]):
-                self.test_file_id = file_info["id"]
-                expected_file_number = f"DK/FILE/{file_data['year']}/{file_data['file_no']}"
-                
-                if file_info["file_number"] == expected_file_number:
-                    self.log_result(
-                        "File Creation with New Fields", 
-                        True, 
-                        f"Created file {file_info['file_number']} with ID {self.test_file_id}"
-                    )
-                    return True
-                else:
-                    self.log_result(
-                        "File Creation with New Fields", 
-                        False, 
-                        error=f"File number mismatch. Expected: {expected_file_number}, Got: {file_info['file_number']}"
-                    )
-            else:
-                missing_fields = [k for k in ["id", "file_number", "file_no", "year", "description", "tahsildar_location"] 
-                                if k not in file_info]
-                self.log_result(
-                    "File Creation with New Fields", 
-                    False, 
-                    error=f"Missing fields in response: {missing_fields}"
-                )
+        # Verify departments and priority
+        if file_doc['departments'] == ["tahsildar", "sp"] and file_doc['priority'] == "high":
+            log_test("File creation with departments+priority", "PASS", 
+                    f"File ID: {file_doc['id']}, Departments: {file_doc['departments']}, Priority: {file_doc['priority']}")
+            return True, file_doc['id']
         else:
-            error_msg = result["data"].get("detail", result.get("error", "Unknown error"))
-            self.log_result(
-                "File Creation with New Fields", 
-                False, 
-                error=f"Status: {result['status_code']}, Error: {error_msg}"
-            )
-            
+            log_test("File creation", "FAIL", 
+                    f"Incorrect departments ({file_doc['departments']}) or priority ({file_doc['priority']})")
+            return False, None
+    else:
+        log_test("File creation", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+        return False, None
+
+def test_file_submit(tokens, file_id):
+    """Test 3: File submit - should create approvals only for selected departments"""
+    print("\n=== TEST 3: FILE SUBMIT - SELECTED DEPARTMENTS ONLY ===")
+    
+    if not file_id or 'caseworker' not in tokens:
+        log_test("File submit", "FAIL", "No file ID or caseworker token")
         return False
     
-    def test_old_fields_rejected(self):
-        """Test that old applicant fields are no longer accepted"""
-        print("\n🚫 Testing Old Fields Rejection...")
-        
-        if "case_worker" not in self.tokens:
-            self.log_result("Old Fields Rejection", False, error="No case_worker token available")
-            return False
-            
-        # Try to create file with old fields
-        old_file_data = {
-            "applicant_name": "Test Applicant",
-            "applicant_phone": "9876543210",
-            "applicant_address": "Test Address",
-            "description": "Should fail"
-        }
-        
-        result = self.make_request(
-            "POST", "/files", old_file_data, 
-            auth_token=self.tokens["case_worker"]
-        )
-        
-        # This should fail
-        if not result["success"]:
-            self.log_result(
-                "Old Fields Rejection", 
-                True, 
-                f"Correctly rejected old fields - Status: {result['status_code']}"
-            )
+    response = requests.post(
+        f"{BASE_URL}/files/{file_id}/submit",
+        headers=auth_headers(tokens['caseworker'])
+    )
+    
+    if response.status_code == 200:
+        updated_file = response.json()
+        if updated_file['status'] == 'submitted' and updated_file['is_locked']:
+            log_test("File submit", "PASS", f"Status: {updated_file['status']}, Locked: {updated_file['is_locked']}")
             return True
         else:
-            self.log_result(
-                "Old Fields Rejection", 
-                False, 
-                error="Should have rejected old applicant fields but accepted them"
-            )
+            log_test("File submit", "FAIL", f"Unexpected status or lock state")
             return False
+    else:
+        log_test("File submit", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+        return False
+
+def test_approval_approve_reject(tokens, file_id):
+    """Test 4: NEW - Approval with approve/reject (NOT yes/no)"""
+    print("\n=== TEST 4: APPROVAL WITH APPROVE/REJECT (NOT YES/NO) ===")
     
-    def test_file_list_and_search(self):
-        """Test file listing and search by file_no"""
-        print("\n📋 Testing File List and Search...")
-        
-        if "case_worker" not in self.tokens:
-            self.log_result("File List and Search", False, error="No case_worker token available")
-            return False
-        
-        # Test basic file listing
-        result = self.make_request(
-            "GET", "/files", 
-            auth_token=self.tokens["case_worker"]
-        )
-        
-        if result["success"]:
-            files = result["data"]
-            if isinstance(files, list):
-                self.log_result(
-                    "File List", 
-                    True, 
-                    f"Retrieved {len(files)} files"
-                )
-            else:
-                self.log_result("File List", False, error="Response is not a list")
-                return False
-        else:
-            error_msg = result["data"].get("detail", result.get("error", "Unknown error"))
-            self.log_result("File List", False, error=f"Status: {result['status_code']}, Error: {error_msg}")
-            return False
-        
-        # Test search by file_no
-        search_result = self.make_request(
-            "GET", "/files", 
-            params={"search": "TEST123"},
-            auth_token=self.tokens["case_worker"]
-        )
-        
-        if search_result["success"]:
-            search_files = search_result["data"]
-            if isinstance(search_files, list):
-                # Check if our test file is found
-                found = any(f.get("file_no") == "TEST123" for f in search_files)
-                if found:
-                    self.log_result(
-                        "File Search by file_no", 
-                        True, 
-                        f"Found {len(search_files)} files matching 'TEST123'"
-                    )
-                    return True
-                else:
-                    self.log_result(
-                        "File Search by file_no", 
-                        False, 
-                        error="Search didn't return the created test file"
-                    )
-            else:
-                self.log_result("File Search by file_no", False, error="Search response is not a list")
-        else:
-            error_msg = search_result["data"].get("detail", search_result.get("error", "Unknown error"))
-            self.log_result("File Search by file_no", False, error=f"Search failed - Status: {search_result['status_code']}, Error: {error_msg}")
-            
+    if not file_id:
+        log_test("Approvals", "FAIL", "No file ID available")
         return False
     
-    def test_file_submit_and_approvals(self):
-        """Test file submission and parallel approvals workflow"""
-        print("\n📤 Testing File Submit and Parallel Approvals...")
-        
-        if not self.test_file_id:
-            self.log_result("File Submit", False, error="No test file ID available")
-            return False
-            
-        # Submit file
-        submit_result = self.make_request(
-            "POST", f"/files/{self.test_file_id}/submit",
-            auth_token=self.tokens["case_worker"]
-        )
-        
-        if not submit_result["success"]:
-            error_msg = submit_result["data"].get("detail", submit_result.get("error", "Unknown error"))
-            self.log_result("File Submit", False, error=f"Status: {submit_result['status_code']}, Error: {error_msg}")
-            return False
-        
-        # Check file status changed
-        file_info = submit_result["data"]
-        if file_info.get("status") == "submitted" and file_info.get("is_locked"):
-            self.log_result(
-                "File Submit", 
-                True, 
-                f"File submitted successfully. Status: {file_info['status']}, Locked: {file_info['is_locked']}"
-            )
-        else:
-            self.log_result(
-                "File Submit", 
-                False, 
-                error=f"File status not updated correctly. Status: {file_info.get('status')}, Locked: {file_info.get('is_locked')}"
-            )
-            return False
-        
-        # Test parallel approvals
-        approval_tests = [
-            {"role": "tahsildar", "token_key": "tahsildar", "decision": "yes", "remark": "Tahsildar approved"},
-            {"role": "sp", "token_key": "sp", "decision": "yes", "remark": "SP approved"},
-            {"role": "forest_officer", "token_key": "forest_officer", "decision": "no", "remark": "Forest concerns"}
-        ]
-        
-        approval_success = True
-        for approval_test in approval_tests:
-            token_key = approval_test["token_key"]
-            if token_key not in self.tokens:
-                self.log_result(f"Approval - {approval_test['role']}", False, error=f"No {token_key} token available")
-                approval_success = False
-                continue
-                
-            approval_result = self.make_request(
-                "POST", f"/files/{self.test_file_id}/approval",
-                {
-                    "decision": approval_test["decision"],
-                    "remark": approval_test["remark"]
-                },
-                auth_token=self.tokens[token_key]
-            )
-            
-            if approval_result["success"]:
-                self.log_result(
-                    f"Parallel Approval - {approval_test['role']}", 
-                    True, 
-                    f"Decision: {approval_test['decision']}, Remark: {approval_test['remark']}"
-                )
-            else:
-                approval_success = False
-                error_msg = approval_result["data"].get("detail", approval_result.get("error", "Unknown error"))
-                self.log_result(
-                    f"Parallel Approval - {approval_test['role']}", 
-                    False, 
-                    error=f"Status: {approval_result['status_code']}, Error: {error_msg}"
-                )
-        
-        return approval_success
+    all_passed = True
     
-    def test_admin_file_operations(self):
-        """Test admin file edit and delete operations"""
-        print("\n👑 Testing Admin File Operations...")
-        
-        if "admin" not in self.tokens:
-            self.log_result("Admin Operations", False, error="No admin token available")
-            return False
-        
-        if not self.test_file_id:
-            self.log_result("Admin Edit", False, error="No test file ID available")
-            return False
-            
-        # Test admin file edit with new fields
-        edit_data = {
-            "file_no": "ADMIN123",
-            "year": "2026",
-            "description": "Admin updated description",
-            "tahsildar_location": "Bantwal"
-        }
-        
-        edit_result = self.make_request(
-            "PUT", f"/admin/files/{self.test_file_id}",
-            edit_data,
-            auth_token=self.tokens["admin"]
+    # Test SP approval with "approve" decision
+    if 'sp' in tokens:
+        response = requests.post(
+            f"{BASE_URL}/files/{file_id}/approval",
+            json={"decision": "approve", "remark": "SP approved - new decision format"},
+            headers=auth_headers(tokens['sp'])
         )
         
-        if edit_result["success"]:
-            updated_file = edit_result["data"]
-            expected_file_number = f"DK/FILE/{edit_data['year']}/{edit_data['file_no']}"
-            
-            if (updated_file.get("file_no") == edit_data["file_no"] and 
-                updated_file.get("year") == edit_data["year"] and
-                updated_file.get("file_number") == expected_file_number):
-                self.log_result(
-                    "Admin File Edit", 
-                    True, 
-                    f"Updated file_no to {edit_data['file_no']}, year to {edit_data['year']}, file_number to {expected_file_number}"
-                )
+        if response.status_code == 200:
+            log_test("SP approval (approve)", "PASS", "Successfully used 'approve' decision")
+        else:
+            log_test("SP approval (approve)", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+            all_passed = False
+    
+    # Test Tahsildar approval with "reject" decision
+    if 'tah_mangaluru' in tokens:
+        response = requests.post(
+            f"{BASE_URL}/files/{file_id}/approval",
+            json={"decision": "reject", "remark": "Tahsildar rejected - testing new format"}, 
+            headers=auth_headers(tokens['tah_mangaluru'])
+        )
+        
+        if response.status_code == 200:
+            log_test("Tahsildar approval (reject)", "PASS", "Successfully used 'reject' decision")
+        else:
+            log_test("Tahsildar approval (reject)", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+            all_passed = False
+    
+    # Test Forest "na" decision (should work for forest only)
+    if 'forest' in tokens:
+        response = requests.post(
+            f"{BASE_URL}/files/{file_id}/approval",
+            json={"decision": "na", "remark": "Forest N/A - not applicable"},
+            headers=auth_headers(tokens['forest'])
+        )
+        
+        if response.status_code == 200:
+            log_test("Forest approval (na)", "PASS", "Successfully used 'na' decision for forest")
+        else:
+            # This might fail if forest was not included in departments - that's expected
+            log_test("Forest approval (na)", "INFO", f"Status: {response.status_code} - Expected if forest not in departments")
+    
+    return all_passed
+
+def test_adc_decision(tokens, file_id):
+    """Test 5: NEW - ADC decision endpoint"""
+    print("\n=== TEST 5: ADC DECISION ENDPOINT ===")
+    
+    if not file_id or 'adc' not in tokens:
+        log_test("ADC decision", "FAIL", "No file ID or ADC token")
+        return False
+    
+    response = requests.post(
+        f"{BASE_URL}/files/{file_id}/adc-decision",
+        json={"decision": "approve", "remark": "ADC approves this file"},
+        headers=auth_headers(tokens['adc'])
+    )
+    
+    if response.status_code == 200:
+        result = response.json()
+        log_test("ADC decision", "PASS", f"Message: {result.get('message', 'Success')}")
+        return True
+    else:
+        log_test("ADC decision", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+        return False
+
+def test_dc_decision(tokens, file_id):
+    """Test 6: DC decision (accept/reject)"""
+    print("\n=== TEST 6: DC DECISION ===")
+    
+    if not file_id or 'dc' not in tokens:
+        log_test("DC decision", "FAIL", "No file ID or DC token")
+        return False
+    
+    response = requests.post(
+        f"{BASE_URL}/files/{file_id}/dc-decision",
+        json={"decision": "accept", "remark": "DC final acceptance"},
+        headers=auth_headers(tokens['dc'])
+    )
+    
+    if response.status_code == 200:
+        result = response.json()
+        log_test("DC decision", "PASS", f"Message: {result.get('message', 'Success')}")
+        return True
+    else:
+        log_test("DC decision", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+        return False
+
+def test_admin_user_edit(tokens, users):
+    """Test 7: NEW - Admin user edit"""
+    print("\n=== TEST 7: ADMIN USER EDIT ===")
+    
+    if 'admin' not in tokens or 'caseworker' not in users:
+        log_test("Admin user edit", "FAIL", "No admin token or caseworker user info")
+        return False
+    
+    # First get user list to find caseworker ID
+    response = requests.get(
+        f"{BASE_URL}/admin/users",
+        headers=auth_headers(tokens['admin'])
+    )
+    
+    if response.status_code != 200:
+        log_test("Admin get users", "FAIL", f"Status: {response.status_code}")
+        return False
+    
+    users_list = response.json()
+    caseworker_user = next((u for u in users_list if u['username'] == 'caseworker'), None)
+    
+    if not caseworker_user:
+        log_test("Admin user edit", "FAIL", "Caseworker user not found in users list")
+        return False
+    
+    log_test("Admin get users", "PASS", f"Found {len(users_list)} users")
+    
+    # Now edit the caseworker user
+    edit_data = {
+        "display_name": "Updated Case Worker",
+        "username": "caseworker_v2"
+    }
+    
+    response = requests.put(
+        f"{BASE_URL}/admin/users/{caseworker_user['id']}",
+        json=edit_data,
+        headers=auth_headers(tokens['admin'])
+    )
+    
+    if response.status_code == 200:
+        updated_user = response.json()
+        if updated_user['display_name'] == edit_data['display_name'] and updated_user['username'] == edit_data['username']:
+            log_test("Admin user edit", "PASS", f"Updated display_name and username successfully")
+            return True
+        else:
+            log_test("Admin user edit", "FAIL", "Update didn't reflect correctly in response")
+            return False
+    else:
+        log_test("Admin user edit", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+        return False
+
+def test_admin_config(tokens):
+    """Test 8: NEW - Admin config (GET/PUT)"""
+    print("\n=== TEST 8: ADMIN CONFIG (GET/PUT) ===")
+    
+    if 'admin' not in tokens:
+        log_test("Admin config", "FAIL", "No admin token")
+        return False
+    
+    # Test GET config
+    response = requests.get(
+        f"{BASE_URL}/admin/config",
+        headers=auth_headers(tokens['admin'])
+    )
+    
+    if response.status_code != 200:
+        log_test("Admin get config", "FAIL", f"Status: {response.status_code}")
+        return False
+    
+    config = response.json()
+    log_test("Admin get config", "PASS", f"Retrieved config with keys: {list(config.keys())}")
+    
+    # Test PUT config
+    update_data = {
+        "department_labels": {
+            "tahsildar": "Revenue Officer",
+            "sp": "Police Dept", 
+            "forest": "Forest Dept"
+        }
+    }
+    
+    response = requests.put(
+        f"{BASE_URL}/admin/config",
+        json=update_data,
+        headers=auth_headers(tokens['admin'])
+    )
+    
+    if response.status_code == 200:
+        updated_config = response.json()
+        if updated_config.get('department_labels') == update_data['department_labels']:
+            log_test("Admin update config", "PASS", "Department labels updated successfully")
+            return True
+        else:
+            log_test("Admin update config", "FAIL", "Update didn't reflect in response")
+            return False
+    else:
+        log_test("Admin update config", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+        return False
+
+def test_analytics_new_fields(tokens):
+    """Test 9: NEW - Analytics with high_priority and overdue fields"""
+    print("\n=== TEST 9: ANALYTICS WITH NEW FIELDS ===")
+    
+    if 'admin' not in tokens:
+        log_test("Analytics", "FAIL", "No admin token")
+        return False
+    
+    response = requests.get(
+        f"{BASE_URL}/admin/analytics",
+        headers=auth_headers(tokens['admin'])
+    )
+    
+    if response.status_code == 200:
+        analytics = response.json()
+        
+        # Check for new fields
+        expected_fields = ['high_priority', 'overdue', 'total', 'submitted', 'approved', 'rejected']
+        missing_fields = [field for field in expected_fields if field not in analytics]
+        
+        if missing_fields:
+            log_test("Analytics new fields", "FAIL", f"Missing fields: {missing_fields}")
+            return False
+        else:
+            log_test("Analytics new fields", "PASS", 
+                    f"High priority: {analytics['high_priority']}, Overdue: {analytics['overdue']}, Total: {analytics['total']}")
+            return True
+    else:
+        log_test("Analytics", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+        return False
+
+def test_full_priority_workflow(tokens):
+    """Test 10: Full priority workflow - Create high-priority file and verify in analytics"""
+    print("\n=== TEST 10: FULL HIGH-PRIORITY WORKFLOW ===")
+    
+    if 'caseworker' not in tokens:
+        log_test("Priority workflow", "FAIL", "No caseworker token")
+        return False
+    
+    # Create another high priority file
+    file_data = {
+        "file_no": "URGENT999",
+        "year": "2025",
+        "description": "Urgent high priority file for workflow test",
+        "tahsildar_location": "Mangaluru", 
+        "departments": ["tahsildar", "sp", "forest"],
+        "priority": "high"
+    }
+    
+    response = requests.post(
+        f"{BASE_URL}/files",
+        json=file_data,
+        headers=auth_headers(tokens['caseworker'])
+    )
+    
+    if response.status_code != 200:
+        log_test("Priority workflow - create", "FAIL", f"File creation failed: {response.status_code}")
+        return False
+    
+    file_doc = response.json()
+    workflow_file_id = file_doc['id']
+    
+    # Submit the file
+    response = requests.post(
+        f"{BASE_URL}/files/{workflow_file_id}/submit",
+        headers=auth_headers(tokens['caseworker'])
+    )
+    
+    if response.status_code != 200:
+        log_test("Priority workflow - submit", "FAIL", f"File submit failed: {response.status_code}")
+        return False
+    
+    # Check if it appears in analytics as high priority
+    if 'admin' in tokens:
+        response = requests.get(
+            f"{BASE_URL}/admin/analytics",
+            headers=auth_headers(tokens['admin'])
+        )
+        
+        if response.status_code == 200:
+            analytics = response.json()
+            if analytics.get('high_priority', 0) > 0:
+                log_test("Priority workflow - analytics", "PASS", 
+                        f"High priority files in analytics: {analytics['high_priority']}")
+                return True
             else:
-                self.log_result(
-                    "Admin File Edit", 
-                    False, 
-                    error=f"Fields not updated correctly. Got file_no: {updated_file.get('file_no')}, year: {updated_file.get('year')}, file_number: {updated_file.get('file_number')}"
-                )
+                log_test("Priority workflow - analytics", "FAIL", "No high priority files shown in analytics")
                 return False
         else:
-            error_msg = edit_result["data"].get("detail", edit_result.get("error", "Unknown error"))
-            self.log_result("Admin File Edit", False, error=f"Status: {edit_result['status_code']}, Error: {error_msg}")
+            log_test("Priority workflow - analytics", "FAIL", "Analytics check failed")
             return False
-        
-        # Test admin file delete
-        delete_result = self.make_request(
-            "DELETE", f"/admin/files/{self.test_file_id}",
-            auth_token=self.tokens["admin"]
-        )
-        
-        if delete_result["success"]:
-            self.log_result(
-                "Admin File Delete", 
-                True, 
-                f"File deleted successfully: {delete_result['data'].get('message', 'No message')}"
-            )
-            return True
-        else:
-            error_msg = delete_result["data"].get("detail", delete_result.get("error", "Unknown error"))
-            self.log_result("Admin File Delete", False, error=f"Status: {delete_result['status_code']}, Error: {error_msg}")
-            return False
+    else:
+        log_test("Priority workflow", "INFO", "Skipped analytics check - no admin token")
+        return True
+
+def main():
+    """Main test runner"""
+    print("🚀 STARTING COMPREHENSIVE BACKEND API TESTING")
+    print(f"Backend URL: {BASE_URL}")
+    print("=" * 70)
     
-    def test_dc_decision(self):
-        """Test DC decision functionality"""
-        print("\n⚖️ Testing DC Decision...")
-        
-        if "dc" not in self.tokens:
-            self.log_result("DC Decision", False, error="No DC token available")
-            return False
-        
-        # Create a new file for DC decision testing
-        if "case_worker" not in self.tokens:
-            self.log_result("DC Decision Setup", False, error="No case_worker token for setup")
-            return False
-            
-        # Create and submit a file for DC decision
-        file_data = {
-            "file_no": "DC001",
-            "year": "2025",
-            "description": "File for DC decision test",
-            "tahsildar_location": "Mangaluru"
-        }
-        
-        create_result = self.make_request(
-            "POST", "/files", file_data,
-            auth_token=self.tokens["case_worker"]
-        )
-        
-        if not create_result["success"]:
-            self.log_result("DC Decision Setup", False, error="Failed to create test file for DC decision")
-            return False
-        
-        dc_test_file_id = create_result["data"]["id"]
-        
-        # Submit the file
-        submit_result = self.make_request(
-            "POST", f"/files/{dc_test_file_id}/submit",
-            auth_token=self.tokens["case_worker"]
-        )
-        
-        if not submit_result["success"]:
-            self.log_result("DC Decision Setup", False, error="Failed to submit file for DC decision")
-            return False
-        
-        # Test DC decision
-        dc_decision_data = {
-            "decision": "accept",
-            "remark": "DC approved the application"
-        }
-        
-        dc_result = self.make_request(
-            "POST", f"/files/{dc_test_file_id}/dc-decision",
-            dc_decision_data,
-            auth_token=self.tokens["dc"]
-        )
-        
-        if dc_result["success"]:
-            self.log_result(
-                "DC Decision", 
-                True, 
-                f"DC decision: {dc_decision_data['decision']}, Message: {dc_result['data'].get('message', 'Success')}"
-            )
-            
-            # Cleanup - delete the test file
-            if "admin" in self.tokens:
-                self.make_request(
-                    "DELETE", f"/admin/files/{dc_test_file_id}",
-                    auth_token=self.tokens["admin"]
-                )
-            
-            return True
-        else:
-            error_msg = dc_result["data"].get("detail", dc_result.get("error", "Unknown error"))
-            self.log_result("DC Decision", False, error=f"Status: {dc_result['status_code']}, Error: {error_msg}")
-            return False
+    # Track test results
+    test_results = []
     
-    def run_all_tests(self):
-        """Run all backend tests in sequence"""
-        print(f"🚀 Starting Backend API Tests for Government File Tracking")
-        print(f"🌐 Backend URL: {BASE_URL}")
-        print("=" * 60)
-        
-        # Test sequence based on workflow dependencies
-        tests = [
-            ("Authentication", self.test_auth_login),
-            ("File Creation New Fields", self.test_file_creation_new_fields),
-            ("Old Fields Rejection", self.test_old_fields_rejected),
-            ("File List and Search", self.test_file_list_and_search),
-            ("File Submit and Approvals", self.test_file_submit_and_approvals),
-            ("DC Decision", self.test_dc_decision),
-            ("Admin File Operations", self.test_admin_file_operations),
-        ]
-        
-        for test_name, test_func in tests:
-            try:
-                success = test_func()
-                if not success:
-                    print(f"⚠️  {test_name} failed - continuing with remaining tests...")
-            except Exception as e:
-                self.log_result(test_name, False, error=f"Exception: {str(e)}")
-                print(f"💥 {test_name} crashed: {str(e)}")
-        
-        # Print final summary
-        self.print_summary()
+    # Test 1: Authentication
+    auth_passed, tokens, users = test_auth_logins()
+    test_results.append(("Auth Login - All roles", auth_passed))
     
-    def print_summary(self):
-        """Print test results summary"""
-        print("\n" + "=" * 60)
-        print("📊 BACKEND TEST SUMMARY")
-        print("=" * 60)
+    if not auth_passed:
+        print("\n❌ CRITICAL: Authentication failed. Cannot proceed with other tests.")
+        return False
+    
+    # Test 2: File creation with new features
+    file_created, file_id = test_file_creation_with_departments_priority(tokens)
+    test_results.append(("File Creation (departments+priority)", file_created))
+    
+    # Test 3: File submit
+    if file_id:
+        submit_passed = test_file_submit(tokens, file_id)
+        test_results.append(("File Submit", submit_passed))
         
-        total_tests = len(self.test_results["passed"]) + len(self.test_results["failed"])
-        passed_count = len(self.test_results["passed"])
+        # Test 4: Approvals with new format
+        approval_passed = test_approval_approve_reject(tokens, file_id)
+        test_results.append(("Approvals (approve/reject/na)", approval_passed))
         
-        print(f"Total Tests: {total_tests}")
-        print(f"Passed: {passed_count}")
-        print(f"Failed: {len(self.test_results['failed'])}")
-        print(f"Success Rate: {(passed_count/total_tests*100):.1f}%" if total_tests > 0 else "No tests run")
+        # Test 5: ADC decision
+        adc_passed = test_adc_decision(tokens, file_id)
+        test_results.append(("ADC Decision", adc_passed))
         
-        if self.test_results["failed"]:
-            print("\n❌ FAILED TESTS:")
-            for fail in self.test_results["failed"]:
-                print(f"  • {fail['test']}: {fail['error']}")
-        
-        if self.test_results["passed"]:
-            print(f"\n✅ PASSED TESTS ({len(self.test_results['passed'])}):")
-            for success in self.test_results["passed"]:
-                print(f"  • {success['test']}: {success['details']}")
+        # Test 6: DC decision
+        dc_passed = test_dc_decision(tokens, file_id)
+        test_results.append(("DC Decision", dc_passed))
+    else:
+        test_results.extend([
+            ("File Submit", False),
+            ("Approvals (approve/reject/na)", False), 
+            ("ADC Decision", False),
+            ("DC Decision", False)
+        ])
+    
+    # Test 7: Admin user edit
+    admin_edit_passed = test_admin_user_edit(tokens, users)
+    test_results.append(("Admin User Edit", admin_edit_passed))
+    
+    # Test 8: Admin config
+    config_passed = test_admin_config(tokens)
+    test_results.append(("Admin Config (GET/PUT)", config_passed))
+    
+    # Test 9: Analytics with new fields
+    analytics_passed = test_analytics_new_fields(tokens)
+    test_results.append(("Analytics (high_priority + overdue)", analytics_passed))
+    
+    # Test 10: Full priority workflow
+    workflow_passed = test_full_priority_workflow(tokens)
+    test_results.append(("Full Priority Workflow", workflow_passed))
+    
+    # Final Summary
+    print("\n" + "=" * 70)
+    print("📊 FINAL TEST SUMMARY")
+    print("=" * 70)
+    
+    passed = sum(1 for _, result in test_results if result)
+    total = len(test_results)
+    
+    for test_name, result in test_results:
+        symbol = "✅" if result else "❌"
+        print(f"{symbol} {test_name}")
+    
+    print(f"\n🏆 OVERALL RESULT: {passed}/{total} tests passed ({passed/total*100:.1f}%)")
+    
+    if passed == total:
+        print("🎉 ALL TESTS PASSED! Backend is ready for production.")
+        return True
+    else:
+        print(f"⚠️  {total - passed} tests failed. Review issues above.")
+        return False
 
 if __name__ == "__main__":
-    tester = BackendTester()
-    tester.run_all_tests()
+    success = main()
+    sys.exit(0 if success else 1)

@@ -11,11 +11,22 @@ import { fetchAPI } from '../constants/api';
 import { Colors, Spacing, Radius, StatusColors, StatusLabels } from '../constants/theme';
 import { AppDialog } from '../components/AppDialog';
 
-const LOCATIONS = [
-  'Mangaluru', 'Bantwal', 'Mulki', 'Moodabidri',
-  'Puttur', 'Sulya', 'Kadaba', 'Ullala', 'Belthangady',
-];
-const ALL_STATUSES = ['draft', 'submitted', 'delayed', 'dc_approved', 'dc_rejected'];
+const LOCATIONS = ["Mangaluru","Bantwal","Mulki","Moodabidri","Puttur","Sulya","Kadaba","Ullala","Belthangady"];
+const ALL_STATUSES = ["draft","submitted","delayed","dc_approved","dc_rejected"];
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={ir.row}>
+      <Text style={ir.label}>{label}</Text>
+      <Text style={ir.value}>{value || 'N/A'}</Text>
+    </View>
+  );
+}
+const ir = StyleSheet.create({
+  row: { flexDirection: 'row', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  label: { width: 100, fontSize: 12, fontWeight: '600', color: Colors.mutedForeground },
+  value: { flex: 1, fontSize: 13, color: Colors.foreground },
+});
 
 export default function FileDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -25,48 +36,41 @@ export default function FileDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [remark, setRemark] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
-
-  // Admin Edit Modal state
   const [editModal, setEditModal] = useState(false);
   const [editData, setEditData] = useState<any>({});
   const [showLocPicker, setShowLocPicker] = useState(false);
   const [showStatusPicker, setShowStatusPicker] = useState(false);
-
-  // Dialog states
   const [dialog, setDialog] = useState<{ visible: boolean; title: string; message: string; onOk?: () => void }>({ visible: false, title: '', message: '' });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmSubmitFile, setConfirmSubmitFile] = useState(false);
   const [confirmDC, setConfirmDC] = useState<{ visible: boolean; decision: string }>({ visible: false, decision: '' });
-  const [confirmOverride, setConfirmOverride] = useState<{ visible: boolean; approval: any }>({ visible: false, approval: null });
+  const [confirmADC, setConfirmADC] = useState<{ visible: boolean; decision: string }>({ visible: false, decision: '' });
 
-  const showDialog = (title: string, message: string, onOk?: () => void) => {
+  const showMsg = (title: string, message: string, onOk?: () => void) => {
     setDialog({ visible: true, title, message, onOk });
   };
-
-  useEffect(() => { loadFile(); }, [id]);
 
   const loadFile = async () => {
     try {
       const data = await fetchAPI(`/files/${id}`);
       setFile(data);
-    } catch (e: any) {
-      showDialog('Error', e.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e: any) { showMsg('Error', e.message); }
+    finally { setLoading(false); }
   };
 
+  useEffect(() => { loadFile(); }, [id]);
+
+  const role = user?.role || '';
+  const isAdmin = role === 'admin';
+
+  // Admin Edit
   const openEditModal = () => {
     setEditData({
-      file_no: file.file_no || '',
-      year: file.year || '',
-      description: file.description,
-      tahsildar_location: file.tahsildar_location,
-      status: file.status,
-      is_locked: file.is_locked,
-      dc_decision: file.dc_decision || '',
-      dc_remark: file.dc_remark || '',
-      adc_remark: file.adc_remark || '',
+      file_no: file.file_no || '', year: file.year || '', description: file.description,
+      tahsildar_location: file.tahsildar_location, status: file.status,
+      is_locked: file.is_locked, priority: file.priority || 'normal',
+      dc_decision: file.dc_decision || '', dc_remark: file.dc_remark || '',
+      adc_remark: file.adc_remark || '', adc_decision: file.adc_decision || '',
     });
     setEditModal(true);
   };
@@ -74,22 +78,12 @@ export default function FileDetailScreen() {
   const saveAdminEdit = async () => {
     setActionLoading(true);
     try {
-      await fetchAPI(`/admin/files/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(editData),
-      });
-      showDialog('Success', 'File updated by admin');
+      await fetchAPI(`/admin/files/${id}`, { method: 'PUT', body: JSON.stringify(editData) });
+      showMsg('Success', 'File updated');
       setEditModal(false);
       loadFile();
-    } catch (e: any) {
-      showDialog('Error', e.message);
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const deleteFile = () => {
-    setConfirmDelete(true);
+    } catch (e: any) { showMsg('Error', e.message); }
+    finally { setActionLoading(false); }
   };
 
   const doDeleteFile = async () => {
@@ -97,134 +91,78 @@ export default function FileDetailScreen() {
     setActionLoading(true);
     try {
       await fetchAPI(`/admin/files/${id}`, { method: 'DELETE' });
-      showDialog('Deleted', 'File deleted successfully', () => router.back());
-    } catch (e: any) {
-      showDialog('Error', e.message);
-    } finally {
-      setActionLoading(false);
-    }
+      showMsg('Deleted', 'File deleted', () => router.back());
+    } catch (e: any) { showMsg('Error', e.message); }
+    finally { setActionLoading(false); }
   };
 
-  const overrideApproval = (approval: any) => {
-    setConfirmOverride({ visible: true, approval });
-  };
-
-  const doOverrideApproval = async (approvalId: string, decision: string) => {
-    setConfirmOverride({ visible: false, approval: null });
-    setActionLoading(true);
-    try {
-      await fetchAPI(`/admin/files/${id}/approval/${approvalId}`, {
-        method: 'PUT',
-        body: JSON.stringify({ decision, remark: 'Admin override' }),
-      });
-      showDialog('Success', 'Approval overridden');
-      loadFile();
-    } catch (e: any) {
-      showDialog('Error', e.message);
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
+  // Dept Approval
   const submitApproval = async (decision: string) => {
     setActionLoading(true);
     try {
-      await fetchAPI(`/files/${id}/approval`, {
-        method: 'POST',
-        body: JSON.stringify({ decision, remark }),
-      });
-      showDialog('Success', 'Approval submitted');
+      await fetchAPI(`/files/${id}/approval`, { method: 'POST', body: JSON.stringify({ decision, remark }) });
+      showMsg('Success', `${decision.charAt(0).toUpperCase() + decision.slice(1)}d`);
       setRemark('');
       loadFile();
-    } catch (e: any) {
-      showDialog('Error', e.message);
-    } finally {
-      setActionLoading(false);
-    }
+    } catch (e: any) { showMsg('Error', e.message); }
+    finally { setActionLoading(false); }
   };
 
+  // ADC
   const submitADCRemark = async () => {
-    if (!remark.trim()) { showDialog('Error', 'Please enter a remark'); return; }
+    if (!remark.trim()) { showMsg('Error', 'Enter a remark'); return; }
     setActionLoading(true);
     try {
-      await fetchAPI(`/files/${id}/adc-remark`, {
-        method: 'POST',
-        body: JSON.stringify({ remark }),
-      });
-      showDialog('Success', 'Remark added');
-      setRemark('');
-      loadFile();
-    } catch (e: any) {
-      showDialog('Error', e.message);
-    } finally {
-      setActionLoading(false);
-    }
+      await fetchAPI(`/files/${id}/adc-remark`, { method: 'POST', body: JSON.stringify({ remark }) });
+      showMsg('Success', 'Remark added');
+      setRemark(''); loadFile();
+    } catch (e: any) { showMsg('Error', e.message); }
+    finally { setActionLoading(false); }
   };
 
-  const submitDCDecision = async (decision: string) => {
-    setConfirmDC({ visible: true, decision });
+  const doADCDecision = async () => {
+    const decision = confirmADC.decision;
+    setConfirmADC({ visible: false, decision: '' });
+    setActionLoading(true);
+    try {
+      await fetchAPI(`/files/${id}/adc-decision`, { method: 'POST', body: JSON.stringify({ decision, remark }) });
+      showMsg('Success', `ADC ${decision}d`);
+      setRemark(''); loadFile();
+    } catch (e: any) { showMsg('Error', e.message); }
+    finally { setActionLoading(false); }
   };
 
-  const doSubmitDCDecision = async () => {
+  // DC
+  const doDCDecision = async () => {
     const decision = confirmDC.decision;
     setConfirmDC({ visible: false, decision: '' });
     setActionLoading(true);
     try {
-      await fetchAPI(`/files/${id}/dc-decision`, {
-        method: 'POST',
-        body: JSON.stringify({ decision, remark }),
-      });
-      showDialog('Success', `File ${decision}ed`);
-      setRemark('');
-      loadFile();
-    } catch (e: any) {
-      showDialog('Error', e.message);
-    } finally {
-      setActionLoading(false);
-    }
+      await fetchAPI(`/files/${id}/dc-decision`, { method: 'POST', body: JSON.stringify({ decision, remark }) });
+      showMsg('Success', `File ${decision}ed`);
+      setRemark(''); loadFile();
+    } catch (e: any) { showMsg('Error', e.message); }
+    finally { setActionLoading(false); }
   };
 
-  const submitFile = async () => {
-    setConfirmSubmitFile(true);
-  };
-
+  // Submit file
   const doSubmitFile = async () => {
     setConfirmSubmitFile(false);
     setActionLoading(true);
     try {
       await fetchAPI(`/files/${id}/submit`, { method: 'POST' });
-      showDialog('Success', 'File submitted');
+      showMsg('Success', 'File submitted');
       loadFile();
-    } catch (e: any) {
-      showDialog('Error', e.message);
-    } finally {
-      setActionLoading(false);
-    }
+    } catch (e: any) { showMsg('Error', e.message); }
+    finally { setActionLoading(false); }
   };
 
-  if (loading) {
-    return (
-      <SafeAreaView style={s.container}>
-        <View style={s.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
-      </SafeAreaView>
-    );
-  }
+  if (loading) return <SafeAreaView style={s.container}><View style={s.center}><ActivityIndicator size="large" color={Colors.primary} /></View></SafeAreaView>;
+  if (!file) return <SafeAreaView style={s.container}><View style={s.center}><Text>File not found</Text></View></SafeAreaView>;
 
-  if (!file) {
-    return (
-      <SafeAreaView style={s.container}>
-        <View style={s.center}><Text style={s.emptyText}>File not found</Text></View>
-      </SafeAreaView>
-    );
-  }
-
-  const daysLeft = file.deadline && file.status === 'submitted'
-    ? Math.max(0, Math.ceil((new Date(file.deadline).getTime() - Date.now()) / 86400000))
-    : null;
-
-  const role = user?.role || '';
-  const isAdmin = role === 'admin';
-  const canApprove = ['tahsildar', 'sp', 'forest_officer'].includes(role);
+  const isHighPriority = file.priority === 'high';
+  const daysLeft = file.deadline ? Math.ceil((new Date(file.deadline).getTime() - Date.now()) / (1000 * 86400)) : null;
+  const isOverdue = daysLeft !== null && daysLeft < 0;
   const myApproval = file.approvals?.find((a: any) => {
     if (role === 'tahsildar') return a.department === 'tahsildar' && a.department_detail === user?.department;
     if (role === 'sp') return a.department === 'sp';
@@ -236,607 +174,332 @@ export default function FileDetailScreen() {
     <SafeAreaView style={s.container}>
       {/* Header */}
       <View style={s.header}>
-        <TouchableOpacity testID="back-btn" onPress={() => router.back()} style={s.backBtn}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.primary} />
+        <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
+          <MaterialCommunityIcons name="arrow-left" size={22} color={Colors.foreground} />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>File Detail</Text>
-        {isAdmin ? (
-          <View style={s.adminHeaderActions}>
-            <TouchableOpacity testID="admin-edit-btn" onPress={openEditModal} style={s.headerIcon}>
+        <View style={{ flex: 1 }}>
+          <Text style={s.fileNumber}>{file.file_number}</Text>
+        </View>
+        {isAdmin && (
+          <View style={{ flexDirection: 'row', gap: 4 }}>
+            <TouchableOpacity onPress={openEditModal} style={s.iconBtn}>
               <MaterialCommunityIcons name="pencil" size={20} color={Colors.primary} />
             </TouchableOpacity>
-            <TouchableOpacity testID="admin-delete-btn" onPress={deleteFile} style={s.headerIcon}>
-              <MaterialCommunityIcons name="delete" size={20} color={Colors.error} />
+            <TouchableOpacity onPress={() => setConfirmDelete(true)} style={s.iconBtn}>
+              <MaterialCommunityIcons name="delete" size={20} color="#DC2626" />
             </TouchableOpacity>
           </View>
-        ) : (
-          <View style={{ width: 40 }} />
         )}
       </View>
 
-      <ScrollView contentContainerStyle={s.content}>
-        {/* File Info */}
-        <View style={s.fileHeader}>
-          <Text style={s.fileNumber}>{file.file_number}</Text>
-          <View style={[s.statusBadge, { backgroundColor: StatusColors[file.status] || '#94A3B8' }]}>
-            <Text style={s.statusText}>{StatusLabels[file.status] || file.status}</Text>
+      {actionLoading && <View style={s.loadingBar}><ActivityIndicator color={Colors.primary} /></View>}
+
+      <ScrollView contentContainerStyle={s.scrollContent}>
+        {/* Priority + Status Banner */}
+        <View style={[s.statusBanner, { backgroundColor: StatusColors[file.status] + '15' }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            {isHighPriority && <MaterialCommunityIcons name="alert-circle" size={16} color="#DC2626" />}
+            <Text style={[s.statusText, { color: StatusColors[file.status] }]}>{StatusLabels[file.status] || file.status}</Text>
+            {isHighPriority && <View style={s.priorityTag}><Text style={s.priorityTagText}>HIGH PRIORITY</Text></View>}
           </View>
+          {daysLeft !== null && file.status === 'submitted' && (
+            <Text style={[s.deadlineText, isOverdue && { color: '#DC2626' }]}>
+              {isOverdue ? `${Math.abs(daysLeft)} days overdue` : `${daysLeft} days remaining`}
+            </Text>
+          )}
         </View>
 
-        {daysLeft !== null && (
-          <View style={[s.deadlineBanner, daysLeft <= 5 && { backgroundColor: '#FEF2F2', borderColor: Colors.error }]}>
-            <MaterialCommunityIcons name="clock-alert-outline" size={18} color={daysLeft <= 5 ? Colors.error : Colors.warning} />
-            <Text style={[s.deadlineText, daysLeft <= 5 && { color: Colors.error }]}>
-              {daysLeft} days remaining until deadline
-            </Text>
-          </View>
-        )}
-
-        {file.status === 'delayed' && (
-          <View style={[s.deadlineBanner, { backgroundColor: '#FEF2F2', borderColor: Colors.error }]}>
-            <MaterialCommunityIcons name="alert" size={18} color={Colors.error} />
-            <Text style={[s.deadlineText, { color: Colors.error }]}>DEADLINE CROSSED - ESCALATED</Text>
-          </View>
-        )}
-
-        {/* Admin Quick Actions Bar */}
-        {isAdmin && (
-          <View style={s.adminBar}>
-            <MaterialCommunityIcons name="shield-account" size={16} color={Colors.accent} />
-            <Text style={s.adminBarText}>ADMIN CONTROLS</Text>
-            <TouchableOpacity testID="admin-edit-full-btn" style={s.adminActionBtn} onPress={openEditModal}>
-              <MaterialCommunityIcons name="file-edit-outline" size={16} color={Colors.primaryForeground} />
-              <Text style={s.adminActionBtnText}>Edit All</Text>
-            </TouchableOpacity>
-            <TouchableOpacity testID="admin-delete-full-btn" style={[s.adminActionBtn, { backgroundColor: Colors.error }]} onPress={deleteFile}>
-              <MaterialCommunityIcons name="delete-outline" size={16} color={Colors.primaryForeground} />
-              <Text style={s.adminActionBtnText}>Delete</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* File Info */}
+        {/* File Details */}
         <View style={s.card}>
           <Text style={s.cardTitle}>FILE DETAILS</Text>
           <InfoRow label="File No" value={file.file_no || 'N/A'} />
           <InfoRow label="Year" value={file.year || 'N/A'} />
           <InfoRow label="Description" value={file.description} />
           <InfoRow label="Tahsildar" value={file.tahsildar_location} />
-          <InfoRow label="Status" value={StatusLabels[file.status] || file.status} />
-          <InfoRow label="Locked" value={file.is_locked ? 'Yes' : 'No'} />
+          <InfoRow label="Departments" value={(file.departments || []).join(', ').toUpperCase()} />
+          <InfoRow label="Priority" value={(file.priority || 'normal').toUpperCase()} />
           <InfoRow label="Created By" value={file.created_by_name} />
           <InfoRow label="Created" value={new Date(file.created_at).toLocaleString()} />
+          {file.deadline && <InfoRow label="Deadline" value={new Date(file.deadline).toLocaleDateString()} />}
         </View>
 
-        {/* Submit button for draft files */}
+        {/* Submit Button (Draft) */}
         {file.status === 'draft' && (role === 'case_worker' || isAdmin) && (
-          <TouchableOpacity testID="submit-file-btn" style={s.submitBtn} onPress={submitFile} disabled={actionLoading}>
-            {actionLoading ? <ActivityIndicator color="#FFF" /> : (
-              <Text style={s.submitBtnText}>Submit to Departments</Text>
-            )}
+          <TouchableOpacity style={s.actionBtn} onPress={() => setConfirmSubmitFile(true)}>
+            <MaterialCommunityIcons name="send" size={18} color="#FFF" />
+            <Text style={s.actionBtnText}>Submit to Departments</Text>
           </TouchableOpacity>
         )}
 
-        {/* Department Approvals */}
+        {/* Approvals */}
         {file.approvals && file.approvals.length > 0 && (
           <View style={s.card}>
             <Text style={s.cardTitle}>DEPARTMENT APPROVALS</Text>
-            {file.approvals.map((appr: any) => (
-              <View key={appr.id} style={s.approvalItem}>
-                <View style={s.approvalHeader}>
-                  <Text style={s.approvalDept}>
-                    {appr.department.toUpperCase()}
-                    {appr.department_detail ? ` - ${appr.department_detail}` : ''}
-                  </Text>
-                  <ApprovalBadge decision={appr.decision} />
+            {file.approvals.map((a: any) => {
+              const decColor = a.decision === 'approve' ? '#059669' : a.decision === 'reject' ? '#DC2626' : a.decision === 'na' ? '#94A3B8' : '#F59E0B';
+              const decLabel = a.decision === 'approve' ? 'APPROVED' : a.decision === 'reject' ? 'REJECTED' : a.decision === 'na' ? 'N/A' : 'PENDING';
+              const deadlineDays = file.deadline ? Math.ceil((new Date(file.deadline).getTime() - Date.now()) / (1000 * 86400)) : null;
+              return (
+                <View key={a.id} style={ap.row}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={ap.dept}>{a.department.toUpperCase()} {a.department_detail ? `(${a.department_detail})` : ''}</Text>
+                    {a.remark ? <Text style={ap.remark}>Remark: {a.remark}</Text> : null}
+                    {a.decided_at ? <Text style={ap.date}>{new Date(a.decided_at).toLocaleString()}</Text> : null}
+                    {!a.decision && deadlineDays !== null && (
+                      <Text style={[ap.deadline, deadlineDays < 0 && { color: '#DC2626' }]}>
+                        {deadlineDays < 0 ? `${Math.abs(deadlineDays)}d overdue` : `${deadlineDays}d left`}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={[ap.badge, { backgroundColor: decColor + '20' }]}>
+                    <Text style={[ap.badgeText, { color: decColor }]}>{decLabel}</Text>
+                  </View>
                 </View>
-                {appr.remark ? <Text style={s.approvalRemark}>Remark: {appr.remark}</Text> : null}
-                {appr.decided_at && (
-                  <Text style={s.approvalDate}>Decided: {new Date(appr.decided_at).toLocaleString()}</Text>
-                )}
-                {/* Admin override button */}
-                {isAdmin && (
-                  <TouchableOpacity
-                    testID={`admin-override-${appr.department}`}
-                    style={s.overrideBtn}
-                    onPress={() => overrideApproval(appr)}
-                  >
-                    <MaterialCommunityIcons name="shield-edit-outline" size={14} color={Colors.accent} />
-                    <Text style={s.overrideBtnText}>Override</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
 
-        {/* Approval Action for department officers */}
-        {canApprove && myApproval && !myApproval.is_locked && (
+        {/* My Approval Action (Tahsildar / SP / Forest) */}
+        {myApproval && !myApproval.is_locked && (
           <View style={s.card}>
-            <Text style={s.cardTitle}>YOUR APPROVAL</Text>
-            <TextInput
-              testID="approval-remark-input"
-              style={[s.input, s.textArea]}
-              placeholder="Add remark (optional)"
-              placeholderTextColor={Colors.mutedForeground}
-              value={remark}
-              onChangeText={setRemark}
-              multiline
-            />
-            <View style={s.actionRow}>
-              <TouchableOpacity testID="approve-yes-btn" style={[s.actionBtn, { backgroundColor: Colors.success }]} onPress={() => submitApproval('yes')} disabled={actionLoading}>
-                <Text style={s.actionBtnText}>YES</Text>
+            <Text style={s.cardTitle}>YOUR ACTION REQUIRED</Text>
+            <TextInput style={s.remarkInput} value={remark} onChangeText={setRemark} placeholder="Add remark (optional)" placeholderTextColor={Colors.mutedForeground} multiline />
+            <View style={s.approvalBtns}>
+              <TouchableOpacity style={[s.approveBtn, { backgroundColor: '#059669' }]} onPress={() => submitApproval('approve')}>
+                <MaterialCommunityIcons name="check-bold" size={16} color="#FFF" />
+                <Text style={s.approveBtnText}>Approve</Text>
               </TouchableOpacity>
-              <TouchableOpacity testID="approve-no-btn" style={[s.actionBtn, { backgroundColor: Colors.error }]} onPress={() => submitApproval('no')} disabled={actionLoading}>
-                <Text style={s.actionBtnText}>NO</Text>
+              <TouchableOpacity style={[s.approveBtn, { backgroundColor: '#DC2626' }]} onPress={() => submitApproval('reject')}>
+                <MaterialCommunityIcons name="close-thick" size={16} color="#FFF" />
+                <Text style={s.approveBtnText}>Reject</Text>
               </TouchableOpacity>
               {role === 'forest_officer' && (
-                <TouchableOpacity testID="approve-na-btn" style={[s.actionBtn, { backgroundColor: Colors.mutedForeground }]} onPress={() => submitApproval('na')} disabled={actionLoading}>
-                  <Text style={s.actionBtnText}>N/A</Text>
+                <TouchableOpacity style={[s.approveBtn, { backgroundColor: '#94A3B8' }]} onPress={() => submitApproval('na')}>
+                  <Text style={s.approveBtnText}>N/A</Text>
                 </TouchableOpacity>
               )}
             </View>
           </View>
         )}
 
-        {/* ADC Remark */}
-        {file.adc_remark ? (
+        {/* ADC Section */}
+        {(role === 'adc' || isAdmin) && file.status !== 'draft' && (
           <View style={s.card}>
-            <Text style={s.cardTitle}>ADC REMARK</Text>
-            <Text style={s.remarkText}>{file.adc_remark}</Text>
-            {file.adc_remark_at && <Text style={s.remarkDate}>{new Date(file.adc_remark_at).toLocaleString()}</Text>}
-          </View>
-        ) : null}
+            <Text style={s.cardTitle}>ADC DECISION</Text>
+            {file.adc_decision && (
+              <View style={[ap.badge, { backgroundColor: file.adc_decision === 'approve' ? '#05966920' : '#DC262620', alignSelf: 'flex-start', marginBottom: 8 }]}>
+                <Text style={[ap.badgeText, { color: file.adc_decision === 'approve' ? '#059669' : '#DC2626' }]}>
+                  {file.adc_decision === 'approve' ? 'APPROVED' : 'REJECTED'}
+                </Text>
+              </View>
+            )}
+            {file.adc_remark ? <Text style={s.existingRemark}>Remark: {file.adc_remark}</Text> : null}
 
-        {role === 'adc' && file.status !== 'draft' && (
-          <View style={s.card}>
-            <Text style={s.cardTitle}>ADD YOUR REMARK</Text>
-            <TextInput testID="adc-remark-input" style={[s.input, s.textArea]} placeholder="Enter your remark" placeholderTextColor={Colors.mutedForeground} value={remark} onChangeText={setRemark} multiline />
-            <TouchableOpacity testID="adc-submit-remark-btn" style={s.primaryBtn} onPress={submitADCRemark} disabled={actionLoading}>
-              {actionLoading ? <ActivityIndicator color="#FFF" /> : <Text style={s.primaryBtnText}>Submit Remark</Text>}
-            </TouchableOpacity>
+            {!file.adc_decision && role === 'adc' && (
+              <>
+                <TextInput style={s.remarkInput} value={remark} onChangeText={setRemark} placeholder="Add remark" placeholderTextColor={Colors.mutedForeground} multiline />
+                <View style={s.approvalBtns}>
+                  <TouchableOpacity style={[s.approveBtn, { backgroundColor: '#059669' }]} onPress={() => setConfirmADC({ visible: true, decision: 'approve' })}>
+                    <MaterialCommunityIcons name="check-bold" size={16} color="#FFF" />
+                    <Text style={s.approveBtnText}>Approve</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[s.approveBtn, { backgroundColor: '#DC2626' }]} onPress={() => setConfirmADC({ visible: true, decision: 'reject' })}>
+                    <MaterialCommunityIcons name="close-thick" size={16} color="#FFF" />
+                    <Text style={s.approveBtnText}>Reject</Text>
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity style={[s.approveBtn, { backgroundColor: Colors.primary, marginTop: 8, alignSelf: 'stretch' }]} onPress={submitADCRemark}>
+                  <Text style={s.approveBtnText}>Add Remark Only</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         )}
 
-        {/* DC Decision */}
-        {file.dc_decision && (
+        {/* DC Section */}
+        {(role === 'dc' || isAdmin) && file.status !== 'draft' && (
           <View style={s.card}>
-            <Text style={s.cardTitle}>DC DECISION</Text>
-            <View style={[s.dcBadge, { backgroundColor: file.dc_decision === 'accept' ? Colors.success : Colors.error }]}>
-              <Text style={s.dcBadgeText}>{file.dc_decision.toUpperCase()}</Text>
-            </View>
-            {file.dc_remark ? <Text style={s.remarkText}>{file.dc_remark}</Text> : null}
-            {file.dc_decided_at && <Text style={s.remarkDate}>{new Date(file.dc_decided_at).toLocaleString()}</Text>}
-          </View>
-        )}
-
-        {role === 'dc' && file.status === 'submitted' && (
-          <View style={s.card}>
-            <Text style={s.cardTitle}>FINAL DECISION</Text>
-            <TextInput testID="dc-remark-input" style={[s.input, s.textArea]} placeholder="Add remark (optional)" placeholderTextColor={Colors.mutedForeground} value={remark} onChangeText={setRemark} multiline />
-            <View style={s.actionRow}>
-              <TouchableOpacity testID="dc-accept-btn" style={[s.actionBtn, { backgroundColor: Colors.success, flex: 1 }]} onPress={() => submitDCDecision('accept')} disabled={actionLoading}>
-                <Text style={s.actionBtnText}>ACCEPT</Text>
-              </TouchableOpacity>
-              <TouchableOpacity testID="dc-reject-btn" style={[s.actionBtn, { backgroundColor: Colors.error, flex: 1 }]} onPress={() => submitDCDecision('reject')} disabled={actionLoading}>
-                <Text style={s.actionBtnText}>REJECT</Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={s.cardTitle}>DC FINAL DECISION</Text>
+            {file.dc_decision ? (
+              <View style={[ap.badge, { backgroundColor: file.dc_decision === 'accept' ? '#05966920' : '#DC262620', alignSelf: 'flex-start' }]}>
+                <Text style={[ap.badgeText, { color: file.dc_decision === 'accept' ? '#059669' : '#DC2626' }]}>
+                  {file.dc_decision === 'accept' ? 'ACCEPTED' : 'REJECTED'}
+                </Text>
+              </View>
+            ) : role === 'dc' ? (
+              <>
+                <TextInput style={s.remarkInput} value={remark} onChangeText={setRemark} placeholder="Add remark (optional)" placeholderTextColor={Colors.mutedForeground} multiline />
+                <View style={s.approvalBtns}>
+                  <TouchableOpacity style={[s.approveBtn, { backgroundColor: '#059669' }]} onPress={() => setConfirmDC({ visible: true, decision: 'accept' })}>
+                    <MaterialCommunityIcons name="check-decagram" size={16} color="#FFF" />
+                    <Text style={s.approveBtnText}>Accept</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[s.approveBtn, { backgroundColor: '#DC2626' }]} onPress={() => setConfirmDC({ visible: true, decision: 'reject' })}>
+                    <MaterialCommunityIcons name="close-octagon" size={16} color="#FFF" />
+                    <Text style={s.approveBtnText}>Reject</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <Text style={s.existingRemark}>No decision yet</Text>
+            )}
+            {file.dc_remark ? <Text style={s.existingRemark}>DC Remark: {file.dc_remark}</Text> : null}
           </View>
         )}
 
         {/* Audit Log */}
         {file.audit_log && file.audit_log.length > 0 && (
           <View style={s.card}>
-            <Text style={s.cardTitle}>AUDIT TRAIL</Text>
-            {file.audit_log.map((log: any) => (
-              <View key={log.id} style={s.auditItem}>
-                <View style={s.auditDot} />
-                <View style={s.auditContent}>
-                  <Text style={s.auditAction}>{log.action}</Text>
-                  <Text style={s.auditMeta}>{log.user_name} | {new Date(log.timestamp).toLocaleString()}</Text>
-                  {log.details ? <Text style={s.auditDetails}>{log.details}</Text> : null}
-                </View>
+            <Text style={s.cardTitle}>AUDIT LOG</Text>
+            {file.audit_log.slice(0, 10).map((log: any) => (
+              <View key={log.id} style={al.row}>
+                <Text style={al.action}>{log.action}</Text>
+                <Text style={al.detail}>{log.details}</Text>
+                <Text style={al.time}>{log.user_name} | {new Date(log.timestamp).toLocaleString()}</Text>
               </View>
             ))}
           </View>
         )}
       </ScrollView>
 
-      {/* =========== ADMIN EDIT MODAL =========== */}
+      {/* Admin Edit Modal */}
       <Modal visible={editModal} animationType="slide">
-        <SafeAreaView style={s.modalContainer}>
-          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-            <View style={s.modalHeader}>
-              <TouchableOpacity testID="close-edit-modal" onPress={() => setEditModal(false)} style={s.backBtn}>
-                <MaterialCommunityIcons name="close" size={24} color={Colors.primary} />
-              </TouchableOpacity>
-              <Text style={s.modalHeaderTitle}>Admin Edit File</Text>
-              <TouchableOpacity testID="save-admin-edit" onPress={saveAdminEdit} disabled={actionLoading} style={s.saveBtn}>
-                {actionLoading ? <ActivityIndicator size="small" color={Colors.primaryForeground} /> : (
-                  <Text style={s.saveBtnText}>Save</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView contentContainerStyle={s.editForm} keyboardShouldPersistTaps="handled">
-              <Text style={s.editSectionTitle}>FILE PROPERTIES</Text>
-
-              <View style={s.editField}>
-                <Text style={s.editLabel}>FILE NO</Text>
-                <TextInput testID="edit-file-no" style={s.editInput} value={editData.file_no} onChangeText={(v) => setEditData({ ...editData, file_no: v })} />
-              </View>
-
-              <View style={s.editField}>
-                <Text style={s.editLabel}>YEAR</Text>
-                <TextInput testID="edit-year" style={s.editInput} value={editData.year} onChangeText={(v) => setEditData({ ...editData, year: v })} keyboardType="number-pad" />
-              </View>
-
-              <View style={s.editField}>
-                <Text style={s.editLabel}>DESCRIPTION</Text>
-                <TextInput testID="edit-description" style={[s.editInput, { height: 96, textAlignVertical: 'top' }]} value={editData.description} onChangeText={(v) => setEditData({ ...editData, description: v })} multiline />
-              </View>
-
-              <View style={s.editField}>
-                <Text style={s.editLabel}>TAHSILDAR LOCATION</Text>
-                <TouchableOpacity testID="edit-location-picker" style={s.pickerBtn} onPress={() => setShowLocPicker(true)}>
-                  <Text style={s.pickerBtnText}>{editData.tahsildar_location || 'Select'}</Text>
-                  <MaterialCommunityIcons name="chevron-down" size={20} color={Colors.mutedForeground} />
-                </TouchableOpacity>
-              </View>
-
-              <Text style={[s.editSectionTitle, { marginTop: Spacing.lg }]}>SYSTEM PROPERTIES</Text>
-
-              <View style={s.editField}>
-                <Text style={s.editLabel}>STATUS</Text>
-                <TouchableOpacity testID="edit-status-picker" style={s.pickerBtn} onPress={() => setShowStatusPicker(true)}>
-                  <View style={[s.statusDot, { backgroundColor: StatusColors[editData.status] || '#94A3B8' }]} />
-                  <Text style={s.pickerBtnText}>{StatusLabels[editData.status] || editData.status}</Text>
-                  <MaterialCommunityIcons name="chevron-down" size={20} color={Colors.mutedForeground} />
-                </TouchableOpacity>
-              </View>
-
-              <View style={s.editField}>
-                <Text style={s.editLabel}>FILE LOCKED</Text>
-                <TouchableOpacity
-                  testID="edit-locked-toggle"
-                  style={[s.toggleBtn, editData.is_locked && s.toggleActive]}
-                  onPress={() => setEditData({ ...editData, is_locked: !editData.is_locked })}
-                >
-                  <Text style={[s.toggleText, editData.is_locked && s.toggleTextActive]}>
-                    {editData.is_locked ? 'LOCKED' : 'UNLOCKED'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={s.editField}>
-                <Text style={s.editLabel}>DC DECISION</Text>
-                <View style={s.editRow}>
-                  {['', 'accept', 'reject'].map((d) => (
-                    <TouchableOpacity
-                      key={d || 'none'}
-                      testID={`edit-dc-${d || 'none'}`}
-                      style={[s.editChip, editData.dc_decision === d && s.editChipActive]}
-                      onPress={() => setEditData({ ...editData, dc_decision: d })}
-                    >
-                      <Text style={[s.editChipText, editData.dc_decision === d && s.editChipTextActive]}>
-                        {d ? d.toUpperCase() : 'NONE'}
-                      </Text>
+        <SafeAreaView style={s.container}>
+          <View style={s.header}>
+            <TouchableOpacity onPress={() => setEditModal(false)} style={s.backBtn}>
+              <MaterialCommunityIcons name="close" size={22} color={Colors.foreground} />
+            </TouchableOpacity>
+            <Text style={{ flex: 1, fontSize: 17, fontWeight: '700', color: Colors.foreground, textAlign: 'center' }}>Admin Edit</Text>
+            <TouchableOpacity onPress={saveAdminEdit} style={s.iconBtn}>
+              <MaterialCommunityIcons name="check" size={22} color={Colors.primary} />
+            </TouchableOpacity>
+          </View>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+            <ScrollView contentContainerStyle={s.scrollContent} keyboardShouldPersistTaps="handled">
+              <View style={s.editField}><Text style={s.editLabel}>FILE NO</Text><TextInput style={s.editInput} value={editData.file_no} onChangeText={v => setEditData({ ...editData, file_no: v })} /></View>
+              <View style={s.editField}><Text style={s.editLabel}>YEAR</Text><TextInput style={s.editInput} value={editData.year} onChangeText={v => setEditData({ ...editData, year: v })} /></View>
+              <View style={s.editField}><Text style={s.editLabel}>DESCRIPTION</Text><TextInput style={[s.editInput, { height: 80, textAlignVertical: 'top' }]} value={editData.description} onChangeText={v => setEditData({ ...editData, description: v })} multiline /></View>
+              <View style={s.editField}><Text style={s.editLabel}>PRIORITY</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {['normal', 'high'].map(p => (
+                    <TouchableOpacity key={p} style={[s.editInput, { flex: 1, alignItems: 'center' }, editData.priority === p && { borderColor: p === 'high' ? '#DC2626' : Colors.primary }]} onPress={() => setEditData({ ...editData, priority: p })}>
+                      <Text style={{ color: editData.priority === p ? (p === 'high' ? '#DC2626' : Colors.primary) : Colors.mutedForeground, fontWeight: '600' }}>{p.toUpperCase()}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
               </View>
-
-              <View style={s.editField}>
-                <Text style={s.editLabel}>DC REMARK</Text>
-                <TextInput testID="edit-dc-remark" style={[s.editInput, { height: 60, textAlignVertical: 'top' }]} value={editData.dc_remark} onChangeText={(v) => setEditData({ ...editData, dc_remark: v })} multiline />
-              </View>
-
-              <View style={s.editField}>
-                <Text style={s.editLabel}>ADC REMARK</Text>
-                <TextInput testID="edit-adc-remark" style={[s.editInput, { height: 60, textAlignVertical: 'top' }]} value={editData.adc_remark} onChangeText={(v) => setEditData({ ...editData, adc_remark: v })} multiline />
-              </View>
-
-              {/* Delete Section */}
-              <View style={s.dangerZone}>
-                <Text style={s.dangerTitle}>DANGER ZONE</Text>
-                <Text style={s.dangerDesc}>Permanently delete this file and all its approvals, notifications, and audit trail.</Text>
-                <TouchableOpacity testID="admin-delete-in-modal" style={s.deleteBtn} onPress={() => { setEditModal(false); setTimeout(deleteFile, 300); }}>
-                  <MaterialCommunityIcons name="delete-forever" size={18} color="#FFF" />
-                  <Text style={s.deleteBtnText}>Delete File Permanently</Text>
+              <View style={s.editField}><Text style={s.editLabel}>STATUS</Text>
+                <TouchableOpacity style={s.editInput} onPress={() => setShowStatusPicker(true)}>
+                  <Text style={{ color: Colors.foreground }}>{StatusLabels[editData.status] || editData.status}</Text>
                 </TouchableOpacity>
               </View>
+              <View style={s.editField}><Text style={s.editLabel}>LOCATION</Text>
+                <TouchableOpacity style={s.editInput} onPress={() => setShowLocPicker(true)}>
+                  <Text style={{ color: Colors.foreground }}>{editData.tahsildar_location}</Text>
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity style={[s.actionBtn, { backgroundColor: '#DC2626', marginTop: 16 }]} onPress={() => { setEditModal(false); setTimeout(() => setConfirmDelete(true), 300); }}>
+                <MaterialCommunityIcons name="delete-forever" size={18} color="#FFF" />
+                <Text style={s.actionBtnText}>Delete File</Text>
+              </TouchableOpacity>
             </ScrollView>
           </KeyboardAvoidingView>
-        </SafeAreaView>
 
-        {/* Location Picker */}
-        <Modal visible={showLocPicker} transparent animationType="slide">
-          <View style={s.pickerOverlay}>
-            <View style={s.pickerContent}>
+          <Modal visible={showLocPicker} transparent animationType="slide">
+            <View style={s.pickerOverlay}><View style={s.pickerContent}>
               <Text style={s.pickerTitle}>Select Location</Text>
-              <FlatList
-                data={LOCATIONS}
-                keyExtractor={(i) => i}
-                renderItem={({ item }) => (
-                  <TouchableOpacity style={s.pickerItem} onPress={() => { setEditData({ ...editData, tahsildar_location: item }); setShowLocPicker(false); }}>
-                    <Text style={[s.pickerItemText, editData.tahsildar_location === item && { fontWeight: '700', color: Colors.primary }]}>{item}</Text>
-                    {editData.tahsildar_location === item && <MaterialCommunityIcons name="check" size={18} color={Colors.primary} />}
-                  </TouchableOpacity>
-                )}
-              />
-              <TouchableOpacity style={s.pickerClose} onPress={() => setShowLocPicker(false)}>
-                <Text style={s.pickerCloseText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
+              <FlatList data={LOCATIONS} keyExtractor={i => i} renderItem={({ item }) => (
+                <TouchableOpacity style={s.pickerItem} onPress={() => { setEditData({ ...editData, tahsildar_location: item }); setShowLocPicker(false); }}>
+                  <Text style={[s.pickerItemText, editData.tahsildar_location === item && { fontWeight: '700', color: Colors.primary }]}>{item}</Text>
+                </TouchableOpacity>
+              )} />
+              <TouchableOpacity style={s.pickerClose} onPress={() => setShowLocPicker(false)}><Text style={s.pickerCloseText}>Cancel</Text></TouchableOpacity>
+            </View></View>
+          </Modal>
 
-        {/* Status Picker */}
-        <Modal visible={showStatusPicker} transparent animationType="slide">
-          <View style={s.pickerOverlay}>
-            <View style={s.pickerContent}>
+          <Modal visible={showStatusPicker} transparent animationType="slide">
+            <View style={s.pickerOverlay}><View style={s.pickerContent}>
               <Text style={s.pickerTitle}>Select Status</Text>
-              <FlatList
-                data={ALL_STATUSES}
-                keyExtractor={(i) => i}
-                renderItem={({ item }) => (
-                  <TouchableOpacity style={s.pickerItem} onPress={() => { setEditData({ ...editData, status: item }); setShowStatusPicker(false); }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <View style={[s.statusDot, { backgroundColor: StatusColors[item] || '#94A3B8' }]} />
-                      <Text style={[s.pickerItemText, editData.status === item && { fontWeight: '700', color: Colors.primary }]}>{StatusLabels[item] || item}</Text>
-                    </View>
-                    {editData.status === item && <MaterialCommunityIcons name="check" size={18} color={Colors.primary} />}
-                  </TouchableOpacity>
-                )}
-              />
-              <TouchableOpacity style={s.pickerClose} onPress={() => setShowStatusPicker(false)}>
-                <Text style={s.pickerCloseText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
+              <FlatList data={ALL_STATUSES} keyExtractor={i => i} renderItem={({ item }) => (
+                <TouchableOpacity style={s.pickerItem} onPress={() => { setEditData({ ...editData, status: item }); setShowStatusPicker(false); }}>
+                  <Text style={[s.pickerItemText, editData.status === item && { fontWeight: '700', color: Colors.primary }]}>{StatusLabels[item] || item}</Text>
+                </TouchableOpacity>
+              )} />
+              <TouchableOpacity style={s.pickerClose} onPress={() => setShowStatusPicker(false)}><Text style={s.pickerCloseText}>Cancel</Text></TouchableOpacity>
+            </View></View>
+          </Modal>
+        </SafeAreaView>
       </Modal>
 
-      {/* Generic Dialog */}
-      <AppDialog
-        visible={dialog.visible}
-        title={dialog.title}
-        message={dialog.message}
-        buttons={[
-          { text: 'OK', onPress: () => { setDialog({ ...dialog, visible: false }); dialog.onOk?.(); } },
-        ]}
-        onDismiss={() => { setDialog({ ...dialog, visible: false }); dialog.onOk?.(); }}
-      />
-
-      {/* Delete Confirmation */}
-      <AppDialog
-        visible={confirmDelete}
-        title="Delete File"
-        message={`Are you sure you want to permanently delete ${file?.file_number}? This will remove all approvals and notifications.`}
-        buttons={[
-          { text: 'Cancel', style: 'cancel', onPress: () => setConfirmDelete(false) },
-          { text: 'Delete', style: 'destructive', onPress: doDeleteFile },
-        ]}
-        onDismiss={() => setConfirmDelete(false)}
-      />
-
-      {/* Submit File Confirmation */}
-      <AppDialog
-        visible={confirmSubmitFile}
-        title="Submit File"
-        message="This will lock the file and send it to departments. Continue?"
-        buttons={[
-          { text: 'Cancel', style: 'cancel', onPress: () => setConfirmSubmitFile(false) },
-          { text: 'Submit', onPress: doSubmitFile },
-        ]}
-        onDismiss={() => setConfirmSubmitFile(false)}
-      />
-
-      {/* DC Decision Confirmation */}
-      <AppDialog
-        visible={confirmDC.visible}
-        title="Confirm Decision"
-        message={`Are you sure you want to ${confirmDC.decision} this file?`}
-        buttons={[
-          { text: 'Cancel', style: 'cancel', onPress: () => setConfirmDC({ visible: false, decision: '' }) },
-          { text: confirmDC.decision === 'reject' ? 'Reject' : 'Accept', style: confirmDC.decision === 'reject' ? 'destructive' : 'default', onPress: doSubmitDCDecision },
-        ]}
-        onDismiss={() => setConfirmDC({ visible: false, decision: '' })}
-      />
-
-      {/* Override Approval */}
-      <AppDialog
-        visible={confirmOverride.visible}
-        title={`Override ${confirmOverride.approval?.department?.toUpperCase() || ''} Approval`}
-        message="Choose a new decision:"
-        buttons={[
-          { text: 'Cancel', style: 'cancel', onPress: () => setConfirmOverride({ visible: false, approval: null }) },
-          { text: 'YES', onPress: () => doOverrideApproval(confirmOverride.approval?.id, 'yes') },
-          { text: 'NO', style: 'destructive', onPress: () => doOverrideApproval(confirmOverride.approval?.id, 'no') },
-        ]}
-        onDismiss={() => setConfirmOverride({ visible: false, approval: null })}
-      />
+      {/* Dialogs */}
+      <AppDialog visible={dialog.visible} title={dialog.title} message={dialog.message}
+        buttons={[{ text: 'OK', onPress: () => { setDialog({ ...dialog, visible: false }); dialog.onOk?.(); } }]}
+        onDismiss={() => { setDialog({ ...dialog, visible: false }); dialog.onOk?.(); }} />
+      <AppDialog visible={confirmDelete} title="Delete File" message={`Permanently delete ${file?.file_number}?`}
+        buttons={[{ text: 'Cancel', style: 'cancel', onPress: () => setConfirmDelete(false) }, { text: 'Delete', style: 'destructive', onPress: doDeleteFile }]}
+        onDismiss={() => setConfirmDelete(false)} />
+      <AppDialog visible={confirmSubmitFile} title="Submit File" message="Lock and send to departments?"
+        buttons={[{ text: 'Cancel', style: 'cancel', onPress: () => setConfirmSubmitFile(false) }, { text: 'Submit', onPress: doSubmitFile }]}
+        onDismiss={() => setConfirmSubmitFile(false)} />
+      <AppDialog visible={confirmDC.visible} title="DC Decision" message={`${confirmDC.decision} this file?`}
+        buttons={[{ text: 'Cancel', style: 'cancel', onPress: () => setConfirmDC({ visible: false, decision: '' }) }, { text: confirmDC.decision === 'reject' ? 'Reject' : 'Accept', style: confirmDC.decision === 'reject' ? 'destructive' : 'default', onPress: doDCDecision }]}
+        onDismiss={() => setConfirmDC({ visible: false, decision: '' })} />
+      <AppDialog visible={confirmADC.visible} title="ADC Decision" message={`${confirmADC.decision} this file?`}
+        buttons={[{ text: 'Cancel', style: 'cancel', onPress: () => setConfirmADC({ visible: false, decision: '' }) }, { text: confirmADC.decision === 'reject' ? 'Reject' : 'Approve', style: confirmADC.decision === 'reject' ? 'destructive' : 'default', onPress: doADCDecision }]}
+        onDismiss={() => setConfirmADC({ visible: false, decision: '' })} />
     </SafeAreaView>
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={s.infoRow}>
-      <Text style={s.infoLabel}>{label}</Text>
-      <Text style={s.infoValue}>{value}</Text>
-    </View>
-  );
-}
+const ap = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  dept: { fontSize: 12, fontWeight: '700', color: Colors.foreground },
+  remark: { fontSize: 11, color: Colors.mutedForeground, marginTop: 2 },
+  date: { fontSize: 10, color: Colors.mutedForeground, marginTop: 2 },
+  deadline: { fontSize: 10, color: '#F59E0B', fontWeight: '600', marginTop: 2 },
+  badge: { borderRadius: 4, paddingHorizontal: 8, paddingVertical: 3 },
+  badgeText: { fontSize: 10, fontWeight: '800' },
+});
 
-function ApprovalBadge({ decision }: { decision: string | null }) {
-  if (!decision) return (
-    <View style={[s.appBadge, { backgroundColor: Colors.warning }]}><Text style={s.appBadgeText}>PENDING</Text></View>
-  );
-  const color = decision === 'yes' ? Colors.success : decision === 'no' ? Colors.error : Colors.mutedForeground;
-  return (
-    <View style={[s.appBadge, { backgroundColor: color }]}><Text style={s.appBadgeText}>{decision.toUpperCase()}</Text></View>
-  );
-}
+const al = StyleSheet.create({
+  row: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  action: { fontSize: 12, fontWeight: '700', color: Colors.foreground },
+  detail: { fontSize: 11, color: Colors.mutedForeground, marginTop: 1 },
+  time: { fontSize: 10, color: Colors.mutedForeground, marginTop: 2 },
+});
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.surface },
+  container: { flex: 1, backgroundColor: Colors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyText: { fontSize: 14, color: Colors.mutedForeground },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
-    backgroundColor: Colors.background, borderBottomWidth: 1, borderBottomColor: Colors.border,
-  },
-  backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: Colors.primary },
-  adminHeaderActions: { flexDirection: 'row', gap: 4 },
-  headerIcon: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.surface },
-  content: { padding: Spacing.md, paddingBottom: 40 },
-  fileHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
-  fileNumber: { fontSize: 20, fontWeight: '800', color: Colors.primary, letterSpacing: 0.5 },
-  statusBadge: { borderRadius: Radius.sm, paddingHorizontal: 10, paddingVertical: 4 },
-  statusText: { fontSize: 11, fontWeight: '800', color: '#FFF', letterSpacing: 0.5 },
-  deadlineBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: Colors.warning,
-    borderRadius: Radius.md, padding: Spacing.sm, marginBottom: Spacing.md,
-  },
-  deadlineText: { fontSize: 13, fontWeight: '600', color: Colors.warning },
-  adminBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: Colors.accent,
-    borderRadius: Radius.md, padding: Spacing.sm, marginBottom: Spacing.md,
-  },
-  adminBarText: { fontSize: 10, fontWeight: '800', color: Colors.accent, letterSpacing: 1, flex: 1 },
-  adminActionBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: Colors.primary, borderRadius: Radius.sm,
-    paddingHorizontal: 10, paddingVertical: 6,
-  },
-  adminActionBtnText: { fontSize: 11, fontWeight: '700', color: Colors.primaryForeground },
-  card: {
-    backgroundColor: Colors.background, borderRadius: Radius.md,
-    padding: Spacing.md, marginBottom: Spacing.md,
-    borderWidth: 1, borderColor: Colors.border,
-  },
-  cardTitle: { fontSize: 11, fontWeight: '700', color: Colors.mutedForeground, letterSpacing: 1.5, marginBottom: Spacing.sm },
-  infoRow: { flexDirection: 'row', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: Colors.surface },
-  infoLabel: { width: 100, fontSize: 12, fontWeight: '600', color: Colors.mutedForeground },
-  infoValue: { flex: 1, fontSize: 13, color: Colors.secondaryForeground },
-  approvalItem: { paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: Colors.surface },
-  approvalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  approvalDept: { fontSize: 13, fontWeight: '700', color: Colors.primary },
-  appBadge: { borderRadius: Radius.sm, paddingHorizontal: 8, paddingVertical: 3 },
-  appBadgeText: { fontSize: 10, fontWeight: '800', color: '#FFF', letterSpacing: 0.5 },
-  approvalRemark: { fontSize: 12, color: Colors.secondaryForeground, marginTop: 4 },
-  approvalDate: { fontSize: 11, color: Colors.mutedForeground, marginTop: 2 },
-  overrideBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    alignSelf: 'flex-start', marginTop: 6,
-    paddingHorizontal: 10, paddingVertical: 4,
-    borderWidth: 1, borderColor: Colors.accent, borderRadius: Radius.sm,
-  },
-  overrideBtnText: { fontSize: 11, fontWeight: '700', color: Colors.accent },
-  input: {
-    borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md, height: 48,
-    fontSize: 14, color: Colors.secondaryForeground, backgroundColor: Colors.surface,
-  },
-  textArea: { height: 80, paddingTop: Spacing.sm, textAlignVertical: 'top' },
-  actionRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md },
-  actionBtn: { height: 48, borderRadius: Radius.md, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
-  actionBtnText: { fontSize: 14, fontWeight: '800', color: '#FFF', letterSpacing: 0.5 },
-  remarkText: { fontSize: 14, color: Colors.secondaryForeground, marginTop: 4 },
-  remarkDate: { fontSize: 11, color: Colors.mutedForeground, marginTop: 4 },
-  dcBadge: { borderRadius: Radius.sm, paddingHorizontal: 12, paddingVertical: 6, alignSelf: 'flex-start', marginBottom: 8 },
-  dcBadgeText: { fontSize: 13, fontWeight: '800', color: '#FFF', letterSpacing: 0.5 },
-  primaryBtn: { height: 48, backgroundColor: Colors.primary, borderRadius: Radius.md, justifyContent: 'center', alignItems: 'center', marginTop: Spacing.md },
-  primaryBtnText: { fontSize: 14, fontWeight: '700', color: Colors.primaryForeground },
-  submitBtn: { height: 52, backgroundColor: Colors.primary, borderRadius: Radius.md, justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.md },
-  submitBtnText: { fontSize: 15, fontWeight: '700', color: Colors.primaryForeground, letterSpacing: 0.3 },
-  auditItem: { flexDirection: 'row', paddingVertical: 6 },
-  auditDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.muted, marginTop: 5, marginRight: 10 },
-  auditContent: { flex: 1 },
-  auditAction: { fontSize: 13, fontWeight: '600', color: Colors.primary },
-  auditMeta: { fontSize: 11, color: Colors.mutedForeground, marginTop: 1 },
-  auditDetails: { fontSize: 12, color: Colors.secondaryForeground, marginTop: 2 },
-
-  // Admin Edit Modal Styles
-  modalContainer: { flex: 1, backgroundColor: Colors.background },
-  modalHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
-  },
-  modalHeaderTitle: { fontSize: 18, fontWeight: '700', color: Colors.primary },
-  saveBtn: {
-    backgroundColor: Colors.primary, borderRadius: Radius.md,
-    paddingHorizontal: 16, paddingVertical: 8,
-  },
-  saveBtnText: { fontSize: 14, fontWeight: '700', color: Colors.primaryForeground },
-  editForm: { padding: Spacing.lg, paddingBottom: 60 },
-  editSectionTitle: {
-    fontSize: 12, fontWeight: '800', color: Colors.accent,
-    letterSpacing: 1.5, marginBottom: Spacing.md,
-  },
-  editField: { marginBottom: Spacing.md },
-  editLabel: { fontSize: 11, fontWeight: '700', color: Colors.mutedForeground, letterSpacing: 1, marginBottom: 6 },
-  editInput: {
-    borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md, height: 48,
-    fontSize: 15, color: Colors.secondaryForeground, backgroundColor: Colors.surface,
-  },
-  editRow: { flexDirection: 'row', gap: 8 },
-  editChip: {
-    flex: 1, paddingVertical: 10, borderRadius: Radius.md,
-    borderWidth: 1, borderColor: Colors.border, alignItems: 'center',
-  },
-  editChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  editChipText: { fontSize: 12, fontWeight: '700', color: Colors.mutedForeground },
-  editChipTextActive: { color: Colors.primaryForeground },
-  pickerBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md, height: 48, backgroundColor: Colors.surface,
-  },
-  pickerBtnText: { fontSize: 15, color: Colors.secondaryForeground, flex: 1 },
-  statusDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
-  toggleBtn: {
-    paddingVertical: 12, borderRadius: Radius.md,
-    borderWidth: 2, borderColor: Colors.border, alignItems: 'center',
-  },
-  toggleActive: { backgroundColor: Colors.error, borderColor: Colors.error },
-  toggleText: { fontSize: 13, fontWeight: '800', color: Colors.mutedForeground, letterSpacing: 1 },
-  toggleTextActive: { color: '#FFF' },
-  dangerZone: {
-    marginTop: Spacing.xl, padding: Spacing.md,
-    borderWidth: 2, borderColor: Colors.error, borderRadius: Radius.md,
-    borderStyle: 'dashed',
-  },
-  dangerTitle: { fontSize: 12, fontWeight: '800', color: Colors.error, letterSpacing: 1.5 },
-  dangerDesc: { fontSize: 12, color: Colors.mutedForeground, marginTop: 4, marginBottom: Spacing.md },
-  deleteBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: Colors.error, borderRadius: Radius.md,
-    paddingVertical: 14,
-  },
-  deleteBtnText: { fontSize: 14, fontWeight: '700', color: '#FFF' },
-
-  // Picker modals
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.sm, paddingVertical: 8 },
+  backBtn: { padding: 8 },
+  iconBtn: { padding: 8 },
+  fileNumber: { fontSize: 15, fontWeight: '700', color: Colors.primary },
+  loadingBar: { paddingVertical: 4, alignItems: 'center' },
+  scrollContent: { padding: Spacing.md, paddingBottom: 40 },
+  statusBanner: { borderRadius: Radius.sm, padding: 12, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  statusText: { fontSize: 13, fontWeight: '800' },
+  priorityTag: { backgroundColor: '#DC262620', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
+  priorityTagText: { fontSize: 9, fontWeight: '800', color: '#DC2626' },
+  deadlineText: { fontSize: 11, fontWeight: '600', color: Colors.mutedForeground },
+  card: { backgroundColor: Colors.card, borderRadius: Radius.sm, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: Colors.border },
+  cardTitle: { fontSize: 11, fontWeight: '700', color: Colors.mutedForeground, letterSpacing: 0.5, marginBottom: 8 },
+  actionBtn: { backgroundColor: Colors.primary, borderRadius: Radius.md, height: 44, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginBottom: 12 },
+  actionBtnText: { fontSize: 14, fontWeight: '700', color: '#FFF' },
+  remarkInput: { backgroundColor: Colors.background, borderRadius: Radius.sm, padding: 12, fontSize: 13, color: Colors.foreground, borderWidth: 1, borderColor: Colors.border, minHeight: 50, textAlignVertical: 'top', marginBottom: 8 },
+  existingRemark: { fontSize: 12, color: Colors.mutedForeground, marginBottom: 6, fontStyle: 'italic' },
+  approvalBtns: { flexDirection: 'row', gap: 8 },
+  approveBtn: { flex: 1, height: 42, borderRadius: Radius.sm, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
+  approveBtnText: { fontSize: 13, fontWeight: '700', color: '#FFF' },
+  editField: { marginBottom: 14 },
+  editLabel: { fontSize: 11, fontWeight: '700', color: Colors.mutedForeground, letterSpacing: 0.5, marginBottom: 4 },
+  editInput: { backgroundColor: Colors.card, borderRadius: Radius.sm, padding: 12, fontSize: 14, color: Colors.foreground, borderWidth: 1, borderColor: Colors.border },
   pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  pickerContent: {
-    backgroundColor: Colors.background, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    paddingVertical: Spacing.lg, maxHeight: '60%',
-  },
-  pickerTitle: { fontSize: 16, fontWeight: '700', color: Colors.primary, paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
-  pickerItem: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 14, paddingHorizontal: Spacing.lg,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
-  },
-  pickerItemText: { fontSize: 15, color: Colors.secondaryForeground },
-  pickerClose: { alignItems: 'center', paddingVertical: 16 },
-  pickerCloseText: { fontSize: 14, fontWeight: '600', color: Colors.mutedForeground },
+  pickerContent: { backgroundColor: '#FFF', borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: '60%', padding: 16 },
+  pickerTitle: { fontSize: 16, fontWeight: '700', textAlign: 'center', marginBottom: 12 },
+  pickerItem: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  pickerItemText: { fontSize: 15, color: Colors.foreground },
+  pickerClose: { marginTop: 12, paddingVertical: 14, alignItems: 'center' },
+  pickerCloseText: { fontSize: 15, fontWeight: '600', color: Colors.mutedForeground },
 });

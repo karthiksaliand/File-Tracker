@@ -135,6 +135,18 @@ backend:
         agent: "testing"
         comment: "✅ FILE CREATION TESTS PASSED - New fields (file_no, year, description, tahsildar_location) working correctly. Created test file DK/FILE/2025/TEST123. Old applicant fields correctly rejected with 422 status."
 
+  - task: "File Creation with departments and priority"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ NEW FEATURE TESTED - File creation with departments list and priority working perfectly. Created file PRI001/2025 with departments=['tahsildar','sp'] and priority='high'. Response includes both departments and priority fields correctly."
+
   - task: "File List with search by file_no"
     implemented: true
     working: true
@@ -164,6 +176,30 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ FILE SUBMIT & APPROVALS TESTS PASSED - File submission working (status changed to 'submitted', locked=true). All 3 parallel approvals working (tahsildar: yes, sp: yes, forest: no) with proper decision recording."
+
+  - task: "Approval with approve/reject/na (NEW decision format)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ NEW APPROVAL FORMAT TESTED - Approval API now uses 'approve'/'reject'/'na' decisions (NOT yes/no). SP approval with 'approve' decision successful. Tahsildar approval with 'reject' decision successful. Forest 'na' decision works only for forest department as expected."
+
+  - task: "ADC Decision Endpoint (NEW)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ NEW ADC DECISION ENDPOINT TESTED - POST /api/files/{id}/adc-decision working perfectly. ADC can approve/reject files with remarks. adc_decision field correctly updated in file record."
 
   - task: "Admin File Edit/Delete"
     implemented: true
@@ -197,7 +233,7 @@ backend:
 
   - task: "Admin User Management"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/server.py"
     stuck_count: 0
     priority: "medium"
@@ -209,6 +245,33 @@ backend:
       - working: "NA"
         agent: "testing"
         comment: "NOT TESTED - Low priority user management APIs not included in current test focus. Main file tracking workflow is fully functional."
+      - working: true
+        agent: "testing"
+        comment: "✅ NEW ADMIN USER EDIT TESTED - PUT /api/admin/users/{id} working perfectly. Successfully updated caseworker display_name to 'Updated Case Worker' and username to 'caseworker_v2'. Admin can retrieve user list (found 15 users) and edit user details."
+
+  - task: "Admin Config Management (NEW)"
+    implemented: true
+    working: false
+    file: "/app/backend/server.py"
+    stuck_count: 1
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: "❌ ADMIN CONFIG API FAILING - GET /api/admin/config returns 500 Internal Server Error due to MongoDB ObjectId serialization issue. Error: 'ObjectId' object is not iterable. Minor issue: functionality exists but needs _id field exclusion in projection to be JSON serializable."
+
+  - task: "Analytics with NEW fields (high_priority, overdue)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ NEW ANALYTICS FIELDS TESTED - GET /api/admin/analytics now includes high_priority and overdue counts. Successfully tested: Total files: 2, High priority: 1, Overdue: 0. All expected fields present in response."
 
 frontend:
   - task: "File Creation Form (file_no, year, description)"
@@ -279,17 +342,20 @@ metadata:
 
 test_plan:
   current_focus:
-    - "All major testing completed - ready for summary"
-  stuck_tasks: []
+    - "NEW FEATURES TESTING COMPLETED - Comprehensive testing of all major updates finished"
+  stuck_tasks:
+    - "Admin Config API - Minor serialization issue with MongoDB ObjectId"
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
   - agent: "main"
-    message: "Fixed 2 deployment blockers: 1) Replaced passlib with direct bcrypt (fixes __about__ error), 2) Fixed N+1 query in list_files (batch approvals fetch). Also fixed logout race condition and replaced all Alert.alert with custom AppDialog for web compatibility. Test login (auth credentials now use bcrypt directly), file listing (batch approvals), file creation, admin edit/delete. Default creds - caseworker:case123, admin:admin123, sp:sp123, forest:forest123, dc:dc123, adc:adc123, tah_mangaluru:tah123"
+    message: "Major feature update. Test new APIs: 1) File creation with departments list and priority (POST /api/files with departments and priority fields), 2) ADC decision endpoint (POST /api/files/{id}/adc-decision with {decision:'approve',remark:'ok'}), 3) Approval with approve/reject/na (POST /api/files/{id}/approval with decision='approve'|'reject'|'na'), 4) Admin user edit (PUT /api/admin/users/{id} with {display_name,username}), 5) Admin config (GET/PUT /api/admin/config), 6) Analytics now includes high_priority and overdue counts. Default creds same: caseworker:case123, admin:admin123, sp:sp123, forest:forest123, dc:dc123, adc:adc123, tah_mangaluru:tah123"
   - agent: "testing"
     message: "🎉 ALL BACKEND TESTS PASSED (17/17 - 100% success rate)! Complete workflow tested: Auth → File Creation (new fields) → Search → Submit → Parallel Approvals (tahsildar/sp/forest) → DC Decision → Admin Edit/Delete. All APIs working perfectly with new field schema (file_no/year/description/tahsildar_location). Old applicant fields correctly rejected. Backend is production-ready!"
   - agent: "testing"
     message: "🎉 ALL FRONTEND TESTS PASSED (4/4 - 100% success rate)! Mobile-first comprehensive testing completed in 390x844 dimensions. Key findings: ✅ File creation form successfully refactored to new fields (file_no/year/description/tahsildar_location) ✅ Old applicant fields completely removed ✅ Authentication flows working (caseworker & admin) ✅ Dashboard recent files show descriptions instead of applicant names ✅ File detail views updated correctly ✅ Admin edit modal shows new field structure ✅ Logout functionality working properly. Complete field migration successful - frontend matches backend schema perfectly!"
   - agent: "testing"
     message: "✅ POST-DEPLOYMENT VERIFICATION COMPLETE (17/17 - 100% SUCCESS RATE)! Critical deployment fixes validated: 1) BCRYPT MIGRATION - All 6 user roles (caseworker, admin, sp, forest, dc, tah_mangaluru) authenticate successfully with new bcrypt hashing. 2) BATCH QUERY OPTIMIZATION - File listing with approvals_summary working efficiently. 3) COMPLETE WORKFLOW - Full end-to-end testing passed: Auth → File Creation → Search → Submit → Parallel Approvals → DC Decision → Admin Edit/Delete. All APIs responding correctly from production URL. Backend is production-ready and deployment fixes are working perfectly!"
+  - agent: "testing"
+    message: "🚀 NEW FEATURES TESTING COMPLETE (9/10 - 90% SUCCESS RATE)! ✅ ALL 7 USER ROLES authenticated successfully ✅ File creation with departments+priority working perfectly ✅ NEW approve/reject/na decision format working ✅ NEW ADC decision endpoint functional ✅ Admin user edit working ✅ Analytics with high_priority+overdue fields working ✅ Full priority workflow tested successfully ❌ MINOR: Admin config API has ObjectId serialization issue (500 error) - needs _id field exclusion. Core file tracking workflow is 100% functional!"

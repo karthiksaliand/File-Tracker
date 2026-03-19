@@ -11,8 +11,14 @@ import { Colors, Spacing, Radius } from '../constants/theme';
 import { AppDialog } from '../components/AppDialog';
 
 const LOCATIONS = [
-  'Mangaluru', 'Bantwal', 'Mulki', 'Moodabidri',
-  'Puttur', 'Sulya', 'Kadaba', 'Ullala', 'Belthangady',
+  "Mangaluru", "Bantwal", "Mulki", "Moodabidri",
+  "Puttur", "Sulya", "Kadaba", "Ullala", "Belthangady"
+];
+
+const DEPT_OPTIONS = [
+  { key: 'tahsildar', label: 'Tahsildar', icon: 'map-marker', color: '#F59E0B' },
+  { key: 'sp', label: 'SP (Police)', icon: 'shield-star', color: '#0891B2' },
+  { key: 'forest', label: 'Forest Department', icon: 'pine-tree', color: '#059669' },
 ];
 
 export default function CreateFileScreen() {
@@ -21,46 +27,56 @@ export default function CreateFileScreen() {
   const [year, setYear] = useState(new Date().getFullYear().toString());
   const [description, setDescription] = useState('');
   const [tahsildarLocation, setTahsildarLocation] = useState('');
+  const [selectedDepts, setSelectedDepts] = useState<string[]>(['tahsildar', 'sp', 'forest']);
+  const [priority, setPriority] = useState<'normal' | 'high'>('normal');
   const [showPicker, setShowPicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [dialog, setDialog] = useState<{ visible: boolean; title: string; message: string; onOk?: () => void }>({ visible: false, title: '', message: '' });
   const [confirmSubmit, setConfirmSubmit] = useState(false);
 
-  const showDialog = (title: string, message: string, onOk?: () => void) => {
+  const showMsg = (title: string, message: string, onOk?: () => void) => {
     setDialog({ visible: true, title, message, onOk });
   };
 
-  const handleSaveDraft = async () => {
-    if (!fileNo.trim() || !year.trim() || !description.trim() || !tahsildarLocation) {
-      showDialog('Validation', 'Please fill in File No, Year, Description, and select a Tahsildar');
-      return;
+  const toggleDept = (dept: string) => {
+    setSelectedDepts(prev => prev.includes(dept) ? prev.filter(d => d !== dept) : [...prev, dept]);
+  };
+
+  const validate = () => {
+    if (!fileNo.trim() || !year.trim() || !description.trim()) {
+      showMsg('Validation', 'Please fill in File No, Year, and Description');
+      return false;
     }
+    if (selectedDepts.includes('tahsildar') && !tahsildarLocation) {
+      showMsg('Validation', 'Please select a Tahsildar location');
+      return false;
+    }
+    if (selectedDepts.length === 0) {
+      showMsg('Validation', 'Please select at least one department');
+      return false;
+    }
+    return true;
+  };
+
+  const handleSaveDraft = async () => {
+    if (!validate()) return;
     setSaving(true);
     try {
       await fetchAPI('/files', {
         method: 'POST',
         body: JSON.stringify({
-          file_no: fileNo.trim(),
-          year: year.trim(),
-          description: description.trim(),
-          tahsildar_location: tahsildarLocation,
+          file_no: fileNo.trim(), year: year.trim(), description: description.trim(),
+          tahsildar_location: tahsildarLocation || LOCATIONS[0],
+          departments: selectedDepts, priority,
         }),
       });
-      showDialog('Success', 'File saved as draft', () => router.back());
+      showMsg('Success', 'File saved as draft', () => router.back());
     } catch (e: any) {
-      showDialog('Error', e.message);
+      showMsg('Error', e.message);
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleCreateAndSubmit = async () => {
-    if (!fileNo.trim() || !year.trim() || !description.trim() || !tahsildarLocation) {
-      showDialog('Validation', 'Please fill in File No, Year, Description, and select a Tahsildar');
-      return;
-    }
-    setConfirmSubmit(true);
   };
 
   const doSubmit = async () => {
@@ -70,16 +86,15 @@ export default function CreateFileScreen() {
       const file = await fetchAPI('/files', {
         method: 'POST',
         body: JSON.stringify({
-          file_no: fileNo.trim(),
-          year: year.trim(),
-          description: description.trim(),
-          tahsildar_location: tahsildarLocation,
+          file_no: fileNo.trim(), year: year.trim(), description: description.trim(),
+          tahsildar_location: tahsildarLocation || LOCATIONS[0],
+          departments: selectedDepts, priority,
         }),
       });
       await fetchAPI(`/files/${file.id}/submit`, { method: 'POST' });
-      showDialog('Success', `File ${file.file_number} submitted!`, () => router.back());
+      showMsg('Success', `File ${file.file_number} submitted to ${selectedDepts.join(', ')}!`, () => router.back());
     } catch (e: any) {
-      showDialog('Error', e.message);
+      showMsg('Error', e.message);
     } finally {
       setSubmitting(false);
     }
@@ -87,90 +102,82 @@ export default function CreateFileScreen() {
 
   return (
     <SafeAreaView style={s.container}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        {/* Header */}
-        <View style={s.header}>
-          <TouchableOpacity testID="back-btn" onPress={() => router.back()} style={s.backBtn}>
-            <MaterialCommunityIcons name="close" size={24} color={Colors.primary} />
-          </TouchableOpacity>
-          <Text style={s.headerTitle}>New File</Text>
-          <View style={{ width: 40 }} />
-        </View>
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
+          <MaterialCommunityIcons name="arrow-left" size={22} color={Colors.foreground} />
+        </TouchableOpacity>
+        <Text style={s.headerTitle}>Create New File</Text>
+        <View style={{ width: 40 }} />
+      </View>
 
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={s.form} keyboardShouldPersistTaps="handled">
+          {/* Priority Toggle */}
+          <View style={s.priorityRow}>
+            <Text style={s.label}>PRIORITY</Text>
+            <View style={s.priorityToggle}>
+              <TouchableOpacity style={[s.priorityBtn, priority === 'normal' && s.priorityBtnActive]} onPress={() => setPriority('normal')}>
+                <Text style={[s.priorityBtnText, priority === 'normal' && s.priorityBtnTextActive]}>Normal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.priorityBtn, s.priorityBtnHigh, priority === 'high' && s.priorityBtnHighActive]} onPress={() => setPriority('high')}>
+                <MaterialCommunityIcons name="alert-circle" size={14} color={priority === 'high' ? '#FFF' : '#DC2626'} />
+                <Text style={[s.priorityBtnText, { color: priority === 'high' ? '#FFF' : '#DC2626' }]}>High</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
           <View style={s.inputGroup}>
             <Text style={s.label}>FILE NO *</Text>
-            <TextInput
-              testID="file-no-input"
-              style={s.input}
-              value={fileNo}
-              onChangeText={setFileNo}
-              placeholder="Enter file number"
-              placeholderTextColor={Colors.mutedForeground}
-            />
+            <TextInput style={s.input} value={fileNo} onChangeText={setFileNo} placeholder="Enter file number" placeholderTextColor={Colors.mutedForeground} />
           </View>
 
           <View style={s.inputGroup}>
             <Text style={s.label}>YEAR *</Text>
-            <TextInput
-              testID="year-input"
-              style={s.input}
-              value={year}
-              onChangeText={setYear}
-              placeholder="e.g. 2025"
-              placeholderTextColor={Colors.mutedForeground}
-              keyboardType="number-pad"
-            />
+            <TextInput style={s.input} value={year} onChangeText={setYear} placeholder="e.g. 2025" placeholderTextColor={Colors.mutedForeground} keyboardType="number-pad" />
           </View>
 
           <View style={s.inputGroup}>
             <Text style={s.label}>DESCRIPTION *</Text>
-            <TextInput
-              testID="description-input"
-              style={[s.input, s.textArea]}
-              value={description}
-              onChangeText={setDescription}
-              placeholder="File description and details"
-              placeholderTextColor={Colors.mutedForeground}
-              multiline
-            />
+            <TextInput style={[s.input, s.textArea]} value={description} onChangeText={setDescription} placeholder="File description" placeholderTextColor={Colors.mutedForeground} multiline />
           </View>
 
+          {/* Department Selection */}
           <View style={s.inputGroup}>
-            <Text style={s.label}>TAHSILDAR ASSIGNMENT *</Text>
-            <TouchableOpacity
-              testID="tahsildar-picker"
-              style={s.pickerBtn}
-              onPress={() => setShowPicker(true)}
-            >
-              <Text style={tahsildarLocation ? s.pickerText : s.pickerPlaceholder}>
-                {tahsildarLocation || 'Select Tahsildar location'}
-              </Text>
-              <MaterialCommunityIcons name="chevron-down" size={20} color={Colors.mutedForeground} />
-            </TouchableOpacity>
+            <Text style={s.label}>SELECT DEPARTMENTS *</Text>
+            <View style={s.deptGrid}>
+              {DEPT_OPTIONS.map(d => {
+                const selected = selectedDepts.includes(d.key);
+                return (
+                  <TouchableOpacity key={d.key} style={[s.deptCard, selected && { borderColor: d.color, backgroundColor: d.color + '10' }]} onPress={() => toggleDept(d.key)} activeOpacity={0.7}>
+                    <MaterialCommunityIcons name={selected ? 'checkbox-marked' : 'checkbox-blank-outline'} size={20} color={selected ? d.color : Colors.mutedForeground} />
+                    <MaterialCommunityIcons name={d.icon as any} size={18} color={selected ? d.color : Colors.mutedForeground} />
+                    <Text style={[s.deptLabel, selected && { color: d.color, fontWeight: '700' }]}>{d.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
 
-          <View style={s.buttonRow}>
-            <TouchableOpacity
-              testID="save-draft-btn"
-              style={s.draftBtn}
-              onPress={handleSaveDraft}
-              disabled={saving}
-            >
-              {saving ? <ActivityIndicator size="small" color={Colors.primary} /> : (
-                <Text style={s.draftBtnText}>Save Draft</Text>
-              )}
-            </TouchableOpacity>
+          {/* Tahsildar Location (only if tahsildar selected) */}
+          {selectedDepts.includes('tahsildar') && (
+            <View style={s.inputGroup}>
+              <Text style={s.label}>TAHSILDAR LOCATION *</Text>
+              <TouchableOpacity style={s.picker} onPress={() => setShowPicker(true)}>
+                <Text style={tahsildarLocation ? s.pickerText : s.pickerPlaceholder}>
+                  {tahsildarLocation || 'Select location'}
+                </Text>
+                <MaterialCommunityIcons name="chevron-down" size={20} color={Colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
+          )}
 
-            <TouchableOpacity
-              testID="submit-file-btn"
-              style={s.submitBtn}
-              onPress={handleCreateAndSubmit}
-              disabled={submitting}
-            >
-              {submitting ? <ActivityIndicator size="small" color={Colors.primaryForeground} /> : (
-                <Text style={s.submitBtnText}>Submit File</Text>
-              )}
+          {/* Action Buttons */}
+          <View style={s.actions}>
+            <TouchableOpacity style={s.draftBtn} onPress={handleSaveDraft} disabled={saving}>
+              {saving ? <ActivityIndicator color={Colors.primary} /> : <Text style={s.draftBtnText}>Save Draft</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity style={s.submitBtn} onPress={() => { if (validate()) setConfirmSubmit(true); }} disabled={submitting}>
+              {submitting ? <ActivityIndicator color="#FFF" /> : <Text style={s.submitBtnText}>Submit File</Text>}
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -180,114 +187,76 @@ export default function CreateFileScreen() {
       <Modal visible={showPicker} transparent animationType="slide">
         <View style={s.modalOverlay}>
           <View style={s.modalContent}>
-            <Text style={s.modalTitle}>Select Tahsildar</Text>
+            <Text style={s.modalTitle}>Select Tahsildar Location</Text>
             <FlatList
               data={LOCATIONS}
-              keyExtractor={(item) => item}
+              keyExtractor={i => i}
               renderItem={({ item }) => (
-                <TouchableOpacity
-                  testID={`location-${item}`}
-                  style={[s.locationItem, tahsildarLocation === item && s.locationSelected]}
-                  onPress={() => { setTahsildarLocation(item); setShowPicker(false); }}
-                >
-                  <Text style={[s.locationText, tahsildarLocation === item && s.locationTextSelected]}>
-                    {item}
-                  </Text>
-                  {tahsildarLocation === item && (
-                    <MaterialCommunityIcons name="check" size={20} color={Colors.primary} />
-                  )}
+                <TouchableOpacity style={s.modalItem} onPress={() => { setTahsildarLocation(item); setShowPicker(false); }}>
+                  <Text style={[s.modalItemText, tahsildarLocation === item && { fontWeight: '700', color: Colors.primary }]}>{item}</Text>
+                  {tahsildarLocation === item && <MaterialCommunityIcons name="check" size={18} color={Colors.primary} />}
                 </TouchableOpacity>
               )}
             />
-            <TouchableOpacity testID="close-picker-btn" style={s.closePickerBtn} onPress={() => setShowPicker(false)}>
-              <Text style={s.closePickerText}>Cancel</Text>
+            <TouchableOpacity style={s.modalClose} onPress={() => setShowPicker(false)}>
+              <Text style={s.modalCloseText}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Generic Dialog */}
-      <AppDialog
-        visible={dialog.visible}
-        title={dialog.title}
-        message={dialog.message}
-        buttons={[
-          { text: 'OK', onPress: () => { setDialog({ ...dialog, visible: false }); dialog.onOk?.(); } },
-        ]}
-        onDismiss={() => { setDialog({ ...dialog, visible: false }); dialog.onOk?.(); }}
-      />
+      <AppDialog visible={dialog.visible} title={dialog.title} message={dialog.message}
+        buttons={[{ text: 'OK', onPress: () => { setDialog({ ...dialog, visible: false }); dialog.onOk?.(); } }]}
+        onDismiss={() => { setDialog({ ...dialog, visible: false }); dialog.onOk?.(); }} />
 
-      {/* Submit Confirmation Dialog */}
-      <AppDialog
-        visible={confirmSubmit}
-        title="Submit File"
-        message="Once submitted, the file will be locked and sent to departments. Continue?"
+      <AppDialog visible={confirmSubmit} title="Submit File"
+        message={`Submit to: ${selectedDepts.join(', ').toUpperCase()}\nPriority: ${priority.toUpperCase()}\n\nOnce submitted, the file will be locked.`}
         buttons={[
           { text: 'Cancel', style: 'cancel', onPress: () => setConfirmSubmit(false) },
           { text: 'Submit', onPress: doSubmit },
         ]}
-        onDismiss={() => setConfirmSubmit(false)}
-      />
+        onDismiss={() => setConfirmSubmit(false)} />
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.sm, paddingVertical: 8 },
+  backBtn: { padding: 8 },
+  headerTitle: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700', color: Colors.foreground },
+  form: { padding: Spacing.md, gap: 16, paddingBottom: 40 },
+  priorityRow: { gap: 6 },
+  priorityToggle: { flexDirection: 'row', gap: 8 },
+  priorityBtn: { flex: 1, height: 40, borderRadius: Radius.sm, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.card },
+  priorityBtnActive: { borderColor: Colors.primary, backgroundColor: Colors.primary + '10' },
+  priorityBtnHigh: { borderColor: '#DC262640', flexDirection: 'row', gap: 4 },
+  priorityBtnHighActive: { backgroundColor: '#DC2626', borderColor: '#DC2626' },
+  priorityBtnText: { fontSize: 13, fontWeight: '600', color: Colors.foreground },
+  priorityBtnTextActive: { color: Colors.primary },
+  inputGroup: { gap: 6 },
+  label: { fontSize: 11, fontWeight: '700', color: Colors.mutedForeground, letterSpacing: 1 },
+  input: { backgroundColor: Colors.card, borderRadius: Radius.md, padding: 14, fontSize: 15, color: Colors.foreground, borderWidth: 1, borderColor: Colors.border },
+  textArea: { minHeight: 80, textAlignVertical: 'top' },
+  deptGrid: { gap: 6 },
+  deptCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12,
+    backgroundColor: Colors.card, borderRadius: Radius.sm, borderWidth: 1.5, borderColor: Colors.border,
   },
-  backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: Colors.primary },
-  form: { padding: Spacing.lg, paddingBottom: 40 },
-  inputGroup: { marginBottom: Spacing.md },
-  label: {
-    fontSize: 11, fontWeight: '700', color: Colors.mutedForeground,
-    letterSpacing: 1, marginBottom: 6,
-  },
-  input: {
-    borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md, height: 48,
-    fontSize: 15, color: Colors.secondaryForeground, backgroundColor: Colors.surface,
-  },
-  textArea: { height: 96, paddingTop: Spacing.sm, textAlignVertical: 'top' },
-  pickerBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md, height: 48, backgroundColor: Colors.surface,
-  },
-  pickerText: { fontSize: 15, color: Colors.secondaryForeground },
+  deptLabel: { fontSize: 14, color: Colors.foreground },
+  picker: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.card, borderRadius: Radius.md, padding: 14, borderWidth: 1, borderColor: Colors.border },
+  pickerText: { fontSize: 15, color: Colors.foreground },
   pickerPlaceholder: { fontSize: 15, color: Colors.mutedForeground },
-  buttonRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg },
-  draftBtn: {
-    flex: 1, height: 50, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: Radius.md, justifyContent: 'center', alignItems: 'center',
-  },
-  draftBtnText: { fontSize: 15, fontWeight: '600', color: Colors.primary },
-  submitBtn: {
-    flex: 1, height: 50, backgroundColor: Colors.primary,
-    borderRadius: Radius.md, justifyContent: 'center', alignItems: 'center',
-  },
-  submitBtnText: { fontSize: 15, fontWeight: '700', color: Colors.primaryForeground },
+  actions: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  draftBtn: { flex: 1, height: 48, borderRadius: Radius.md, justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: Colors.primary },
+  draftBtnText: { fontSize: 14, fontWeight: '700', color: Colors.primary },
+  submitBtn: { flex: 1, height: 48, borderRadius: Radius.md, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.primary },
+  submitBtnText: { fontSize: 14, fontWeight: '700', color: '#FFF' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: {
-    backgroundColor: Colors.background, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    paddingVertical: Spacing.lg, maxHeight: '60%',
-  },
-  modalTitle: {
-    fontSize: 16, fontWeight: '700', color: Colors.primary,
-    paddingHorizontal: Spacing.lg, marginBottom: Spacing.md,
-  },
-  locationItem: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 14, paddingHorizontal: Spacing.lg,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
-  },
-  locationSelected: { backgroundColor: Colors.surface },
-  locationText: { fontSize: 15, color: Colors.secondaryForeground },
-  locationTextSelected: { fontWeight: '700', color: Colors.primary },
-  closePickerBtn: { alignItems: 'center', paddingVertical: 16 },
-  closePickerText: { fontSize: 14, fontWeight: '600', color: Colors.mutedForeground },
+  modalContent: { backgroundColor: '#FFF', borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: '60%', padding: 16 },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: Colors.foreground, textAlign: 'center', marginBottom: 12 },
+  modalItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  modalItemText: { fontSize: 15, color: Colors.foreground },
+  modalClose: { marginTop: 12, paddingVertical: 14, alignItems: 'center' },
+  modalCloseText: { fontSize: 15, fontWeight: '600', color: Colors.mutedForeground },
 });

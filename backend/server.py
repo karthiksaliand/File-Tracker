@@ -41,6 +41,8 @@ TAHSILDAR_LOCATIONS = [
     "Puttur", "Sulya", "Kadaba", "Ullala", "Belthangady"
 ]
 
+DEPARTMENTS = ["tahsildar", "sp", "forest"]
+
 # ==================== MODELS ====================
 
 class LoginRequest(BaseModel):
@@ -52,12 +54,15 @@ class FileCreateRequest(BaseModel):
     year: str
     description: str
     tahsildar_location: str
+    departments: List[str] = ["tahsildar", "sp", "forest"]
+    priority: str = "normal"  # "normal" or "high"
 
 class FileEditRequest(BaseModel):
     file_no: Optional[str] = None
     year: Optional[str] = None
     description: Optional[str] = None
     tahsildar_location: Optional[str] = None
+    priority: Optional[str] = None
 
 class AdminFileEditRequest(BaseModel):
     file_no: Optional[str] = None
@@ -69,6 +74,9 @@ class AdminFileEditRequest(BaseModel):
     dc_decision: Optional[str] = None
     dc_remark: Optional[str] = None
     adc_remark: Optional[str] = None
+    adc_decision: Optional[str] = None
+    priority: Optional[str] = None
+    departments: Optional[List[str]] = None
 
 class ApprovalRequest(BaseModel):
     decision: str
@@ -76,6 +84,10 @@ class ApprovalRequest(BaseModel):
 
 class ADCRemarkRequest(BaseModel):
     remark: str
+
+class ADCDecisionRequest(BaseModel):
+    decision: str
+    remark: str = ""
 
 class DCDecisionRequest(BaseModel):
     decision: str
@@ -87,6 +99,12 @@ class UserCreateRequest(BaseModel):
     role: str
     display_name: str
     department: str = ""
+
+class UserEditRequest(BaseModel):
+    username: Optional[str] = None
+    display_name: Optional[str] = None
+    department: Optional[str] = None
+    role: Optional[str] = None
 
 class PasswordResetRequest(BaseModel):
     new_password: str
@@ -222,6 +240,15 @@ async def create_file(req: FileCreateRequest, user=Depends(get_current_user)):
     if req.tahsildar_location not in TAHSILDAR_LOCATIONS:
         raise HTTPException(status_code=400, detail="Invalid tahsildar location")
 
+    if req.priority not in ["normal", "high"]:
+        raise HTTPException(status_code=400, detail="Priority must be normal or high")
+
+    # Validate departments
+    valid_depts = {"tahsildar", "sp", "forest"}
+    selected_depts = [d for d in req.departments if d in valid_depts]
+    if not selected_depts:
+        selected_depts = list(valid_depts)
+
     file_number = await generate_file_number(req.file_no, req.year)
     file_doc = {
         "id": str(uuid.uuid4()),
@@ -230,6 +257,8 @@ async def create_file(req: FileCreateRequest, user=Depends(get_current_user)):
         "year": req.year,
         "description": req.description,
         "tahsildar_location": req.tahsildar_location,
+        "departments": selected_depts,
+        "priority": req.priority,
         "status": "draft",
         "is_locked": False,
         "created_by": user["id"],
@@ -241,18 +270,19 @@ async def create_file(req: FileCreateRequest, user=Depends(get_current_user)):
         "dc_remark": "",
         "dc_decided_at": None,
         "dc_decided_by": None,
+        "adc_decision": None,
         "adc_remark": "",
         "adc_remark_at": None,
         "adc_remark_by": None,
     }
     await db.files.insert_one(file_doc)
-    await log_audit(user["id"], user["display_name"], user["role"], "create_file", file_doc["id"], file_number, f"Created file {file_number}")
+    await log_audit(user["id"], user["display_name"], user["role"], "create_file", file_doc["id"], file_number, f"Created file {file_number} [priority: {req.priority}]")
 
     file_doc.pop("_id", None)
     return file_doc
 
 @api_router.get("/files")
-async def list_files(user=Depends(get_current_user), status: Optional[str] = None, search: Optional[str] = None, limit: int = 100, skip: int = 0):
+async def list_files(user=Depends(get_current_user), status: Optional[str] = None, search: Optional[str] = None, priority: Optional[str] = None, limit: int = 100, skip: int = 0):
     query = {}
     role = user["role"]
     dept = user["department"]
@@ -264,11 +294,16 @@ async def list_files(user=Depends(get_current_user), status: Optional[str] = Non
         query["status"] = {"$ne": "draft"}
     elif role == "sp":
         query["status"] = {"$ne": "draft"}
+        query["departments"] = "sp"
     elif role == "forest_officer":
         query["status"] = {"$ne": "draft"}
+        query["departments"] = "forest"
 
     if status and status != "all":
         query["status"] = status
+
+    if priority and priority != "all":
+        query["priority"] = priority
 
     if search:
         query["$or"] = [
@@ -278,23 +313,24 @@ async def list_files(user=Depends(get_current_user), status: Optional[str] = Non
         ]
 
     projection = {"_id": 0, "id": 1, "file_number": 1, "file_no": 1, "year": 1,
-                  "description": 1, "tahsildar_location": 1, "status": 1,
+                  "description": 1, "tahsildar_location": 1, "status": 1, "priority": 1,
+                  "departments": 1,
                   "is_locked": 1, "created_by": 1, "created_by_name": 1, "created_at": 1,
-                  "submitted_at": 1, "deadline": 1, "dc_decision": 1}
+                  "submitted_at": 1, "deadline": 1, "dc_decision": 1, "adc_decision": 1}
     files = await db.files.find(query, projection).sort("created_at", -1).skip(skip).limit(min(limit, 200)).to_list(min(limit, 200))
 
-    # Batch fetch all approvals for non-draft files (avoids N+1 query)
-    non_draft_ids = [f["id"] for f in files if f["status"] != "draft"]
+    # Batch fetch all approvals for non-draft files
+    non_draft_ids = [f["id"] for f in files if f.get("status") != "draft"]
     approvals_by_file = {}
     if non_draft_ids:
-        all_approvals = await db.approvals.find({"file_id": {"$in": non_draft_ids}}, {"_id": 0}).to_list(len(non_draft_ids) * 3)
+        all_approvals = await db.approvals.find({"file_id": {"$in": non_draft_ids}}, {"_id": 0}).to_list(len(non_draft_ids) * 4)
         for appr in all_approvals:
             if appr["file_id"] not in approvals_by_file:
                 approvals_by_file[appr["file_id"]] = []
             approvals_by_file[appr["file_id"]].append(appr)
 
     for f in files:
-        if f["status"] != "draft":
+        if f.get("status") != "draft":
             file_approvals = approvals_by_file.get(f["id"], [])
             f["approvals_summary"] = {
                 a["department"]: {"decision": a["decision"], "department_detail": a.get("department_detail", "")}
@@ -334,12 +370,11 @@ async def edit_file(file_id: str, req: FileEditRequest, user=Depends(get_current
         raise HTTPException(status_code=403, detail="No edit permission")
 
     updates = {}
-    for field in ["file_no", "year", "description", "tahsildar_location"]:
+    for field in ["file_no", "year", "description", "tahsildar_location", "priority"]:
         val = getattr(req, field)
         if val is not None:
             updates[field] = val
 
-    # Regenerate file_number if file_no or year changed
     if "file_no" in updates or "year" in updates:
         new_file_no = updates.get("file_no", file_doc.get("file_no", ""))
         new_year = updates.get("year", file_doc.get("year", ""))
@@ -374,45 +409,63 @@ async def submit_file(file_id: str, user=Depends(get_current_user)):
         "deadline": deadline,
     }})
 
-    approvals = [
-        {
+    # Create approvals only for selected departments
+    selected_depts = file_doc.get("departments", ["tahsildar", "sp", "forest"])
+    approvals = []
+    notifs = []
+
+    if "tahsildar" in selected_depts:
+        approvals.append({
             "id": str(uuid.uuid4()), "file_id": file_id,
             "department": "tahsildar", "department_detail": file_doc["tahsildar_location"],
             "decision": None, "remark": "", "decided_by": None, "decided_at": None,
             "is_locked": False, "last_reminder_at": now, "created_at": now,
-        },
-        {
+        })
+        notifs.append({
+            "id": str(uuid.uuid4()), "target_role": "tahsildar", "target_department": file_doc["tahsildar_location"],
+            "file_id": file_id, "file_number": file_doc["file_number"], "type": "new_file",
+            "title": "New File Assigned", "message": f"File {file_doc['file_number']} assigned for your review.", "is_read": False, "created_at": now
+        })
+
+    if "sp" in selected_depts:
+        approvals.append({
             "id": str(uuid.uuid4()), "file_id": file_id,
             "department": "sp", "department_detail": "Police",
             "decision": None, "remark": "", "decided_by": None, "decided_at": None,
             "is_locked": False, "last_reminder_at": now, "created_at": now,
-        },
-        {
+        })
+        notifs.append({
+            "id": str(uuid.uuid4()), "target_role": "sp", "target_department": "",
+            "file_id": file_id, "file_number": file_doc["file_number"], "type": "new_file",
+            "title": "New File for Review", "message": f"File {file_doc['file_number']} requires SP review.", "is_read": False, "created_at": now
+        })
+
+    if "forest" in selected_depts:
+        approvals.append({
             "id": str(uuid.uuid4()), "file_id": file_id,
             "department": "forest", "department_detail": "Forest",
             "decision": None, "remark": "", "decided_by": None, "decided_at": None,
             "is_locked": False, "last_reminder_at": now, "created_at": now,
-        },
-    ]
-    await db.approvals.insert_many(approvals)
+        })
+        notifs.append({
+            "id": str(uuid.uuid4()), "target_role": "forest_officer", "target_department": "",
+            "file_id": file_id, "file_number": file_doc["file_number"], "type": "new_file",
+            "title": "New File for Review", "message": f"File {file_doc['file_number']} requires Forest review.", "is_read": False, "created_at": now
+        })
 
-    notifs = [
-        {"id": str(uuid.uuid4()), "target_role": "tahsildar", "target_department": file_doc["tahsildar_location"],
-         "file_id": file_id, "file_number": file_doc["file_number"], "type": "new_file",
-         "title": "New File Assigned", "message": f"File {file_doc['file_number']} assigned for your review.", "is_read": False, "created_at": now},
-        {"id": str(uuid.uuid4()), "target_role": "sp", "target_department": "",
-         "file_id": file_id, "file_number": file_doc["file_number"], "type": "new_file",
-         "title": "New File for Review", "message": f"File {file_doc['file_number']} requires SP review.", "is_read": False, "created_at": now},
-        {"id": str(uuid.uuid4()), "target_role": "forest_officer", "target_department": "",
-         "file_id": file_id, "file_number": file_doc["file_number"], "type": "new_file",
-         "title": "New File for Review", "message": f"File {file_doc['file_number']} requires Forest review.", "is_read": False, "created_at": now},
-        {"id": str(uuid.uuid4()), "target_role": "adc", "target_department": "",
-         "file_id": file_id, "file_number": file_doc["file_number"], "type": "new_file",
-         "title": "New File Created", "message": f"File {file_doc['file_number']} submitted for review.", "is_read": False, "created_at": now},
-    ]
-    await db.notifications.insert_many(notifs)
+    # Always notify ADC
+    notifs.append({
+        "id": str(uuid.uuid4()), "target_role": "adc", "target_department": "",
+        "file_id": file_id, "file_number": file_doc["file_number"], "type": "new_file",
+        "title": "New File Created", "message": f"File {file_doc['file_number']} submitted for review.", "is_read": False, "created_at": now
+    })
 
-    await log_audit(user["id"], user["display_name"], user["role"], "submit_file", file_id, file_doc["file_number"], "File submitted for departmental review")
+    if approvals:
+        await db.approvals.insert_many(approvals)
+    if notifs:
+        await db.notifications.insert_many(notifs)
+
+    await log_audit(user["id"], user["display_name"], user["role"], "submit_file", file_id, file_doc["file_number"], f"File submitted to depts: {', '.join(selected_depts)}")
 
     updated = await db.files.find_one({"id": file_id}, {"_id": 0})
     return updated
@@ -421,8 +474,8 @@ async def submit_file(file_id: str, user=Depends(get_current_user)):
 
 @api_router.post("/files/{file_id}/approval")
 async def submit_approval(file_id: str, req: ApprovalRequest, user=Depends(get_current_user)):
-    if req.decision not in ["yes", "no", "na"]:
-        raise HTTPException(status_code=400, detail="Decision must be yes, no, or na")
+    if req.decision not in ["approve", "reject", "na"]:
+        raise HTTPException(status_code=400, detail="Decision must be approve, reject, or na")
 
     file_doc = await db.files.find_one({"id": file_id}, {"_id": 0})
     if not file_doc:
@@ -442,6 +495,10 @@ async def submit_approval(file_id: str, req: ApprovalRequest, user=Depends(get_c
         raise HTTPException(status_code=404, detail="No approval record found")
     if approval["is_locked"]:
         raise HTTPException(status_code=400, detail="Approval already submitted")
+
+    # Forest can use na, others cannot
+    if req.decision == "na" and user["role"] != "forest_officer" and user["role"] != "admin":
+        raise HTTPException(status_code=400, detail="Only Forest department can use N/A")
 
     now = datetime.now(timezone.utc).isoformat()
     await db.approvals.update_one({"id": approval["id"]}, {"$set": {
@@ -463,6 +520,8 @@ async def submit_approval(file_id: str, req: ApprovalRequest, user=Depends(get_c
 
     return {"message": "Approval submitted successfully"}
 
+# ==================== ADC ROUTES ====================
+
 @api_router.post("/files/{file_id}/adc-remark")
 async def add_adc_remark(file_id: str, req: ADCRemarkRequest, user=Depends(get_current_user)):
     if user["role"] not in ["adc", "admin"]:
@@ -479,6 +538,36 @@ async def add_adc_remark(file_id: str, req: ADCRemarkRequest, user=Depends(get_c
 
     await log_audit(user["id"], user["display_name"], user["role"], "adc_remark", file_id, file_doc["file_number"], "ADC remark added")
     return {"message": "Remark added successfully"}
+
+@api_router.post("/files/{file_id}/adc-decision")
+async def adc_decision(file_id: str, req: ADCDecisionRequest, user=Depends(get_current_user)):
+    if user["role"] not in ["adc", "admin"]:
+        raise HTTPException(status_code=403, detail="Only ADC can make decisions")
+    if req.decision not in ["approve", "reject"]:
+        raise HTTPException(status_code=400, detail="Decision must be approve or reject")
+
+    file_doc = await db.files.find_one({"id": file_id}, {"_id": 0})
+    if not file_doc:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    now = datetime.now(timezone.utc).isoformat()
+    await db.files.update_one({"id": file_id}, {"$set": {
+        "adc_decision": req.decision, "adc_remark": req.remark,
+        "adc_remark_at": now, "adc_remark_by": user["id"],
+    }})
+
+    await db.notifications.insert_one({
+        "id": str(uuid.uuid4()), "target_role": "dc", "target_department": "",
+        "file_id": file_id, "file_number": file_doc["file_number"],
+        "type": "adc_decision", "title": f"ADC Decision: {req.decision.upper()}",
+        "message": f"ADC has {req.decision}d file {file_doc['file_number']}.",
+        "is_read": False, "created_at": now,
+    })
+
+    await log_audit(user["id"], user["display_name"], user["role"], "adc_decision", file_id, file_doc["file_number"], f"ADC {req.decision}d the file")
+    return {"message": f"ADC decision recorded: {req.decision}"}
+
+# ==================== DC ROUTES ====================
 
 @api_router.post("/files/{file_id}/dc-decision")
 async def dc_decision(file_id: str, req: DCDecisionRequest, user=Depends(get_current_user)):
@@ -575,6 +664,33 @@ async def create_user(req: UserCreateRequest, user=Depends(require_admin)):
 
     return {"id": new_user["id"], "username": req.username, "role": req.role, "display_name": req.display_name, "department": req.department, "is_active": True}
 
+@api_router.put("/admin/users/{user_id}")
+async def edit_user(user_id: str, req: UserEditRequest, user=Depends(require_admin)):
+    target = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    updates = {}
+    if req.username is not None:
+        # Check username uniqueness
+        existing = await db.users.find_one({"username": req.username, "id": {"$ne": user_id}})
+        if existing:
+            raise HTTPException(status_code=400, detail="Username already taken")
+        updates["username"] = req.username
+    if req.display_name is not None:
+        updates["display_name"] = req.display_name
+    if req.department is not None:
+        updates["department"] = req.department
+    if req.role is not None:
+        updates["role"] = req.role
+
+    if updates:
+        await db.users.update_one({"id": user_id}, {"$set": updates})
+        await log_audit(user["id"], user["display_name"], user["role"], "edit_user", details=f"Edited user {target['username']}: {', '.join(updates.keys())}")
+
+    updated = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    return updated
+
 @api_router.post("/admin/users/{user_id}/reset-password")
 async def reset_password(user_id: str, req: PasswordResetRequest, user=Depends(require_admin)):
     target = await db.users.find_one({"id": user_id}, {"_id": 0})
@@ -596,6 +712,53 @@ async def toggle_active(user_id: str, user=Depends(require_admin)):
     await log_audit(user["id"], user["display_name"], user["role"], "toggle_user", details=f"{'Activated' if new_status else 'Deactivated'}: {target['username']}")
     return {"message": f"User {'activated' if new_status else 'deactivated'}", "is_active": new_status}
 
+@api_router.delete("/admin/users/{user_id}")
+async def delete_user(user_id: str, user=Depends(require_admin)):
+    target = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target["id"] == user["id"]:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+
+    await db.users.delete_one({"id": user_id})
+    await log_audit(user["id"], user["display_name"], user["role"], "delete_user", details=f"Deleted user: {target['username']}")
+    return {"message": f"User {target['username']} deleted"}
+
+# ==================== ADMIN PLACEHOLDER CONFIG ====================
+
+@api_router.get("/admin/config")
+async def get_config(user=Depends(require_admin)):
+    config = await db.app_config.find_one({"key": "placeholders"}, {"_id": 0})
+    if not config:
+        config = {
+            "key": "placeholders",
+            "tahsildar_locations": TAHSILDAR_LOCATIONS,
+            "department_labels": {"tahsildar": "Tahsildar", "sp": "SP (Police)", "forest": "Forest Department"},
+            "role_labels": {"admin": "System Admin", "case_worker": "Case Worker", "tahsildar": "Tahsildar",
+                           "sp": "Superintendent of Police", "forest_officer": "Forest Officer",
+                           "adc": "Assistant Commissioner (ADC)", "dc": "Deputy Commissioner (DC)"},
+        }
+        await db.app_config.insert_one(config)
+    return config
+
+@api_router.put("/admin/config")
+async def update_config(request: Request, user=Depends(require_admin)):
+    body = await request.json()
+    updates = {}
+    if "tahsildar_locations" in body:
+        updates["tahsildar_locations"] = body["tahsildar_locations"]
+    if "department_labels" in body:
+        updates["department_labels"] = body["department_labels"]
+    if "role_labels" in body:
+        updates["role_labels"] = body["role_labels"]
+
+    if updates:
+        await db.app_config.update_one({"key": "placeholders"}, {"$set": updates}, upsert=True)
+        await log_audit(user["id"], user["display_name"], user["role"], "update_config", details=f"Updated config: {', '.join(updates.keys())}")
+
+    config = await db.app_config.find_one({"key": "placeholders"}, {"_id": 0})
+    return config
+
 @api_router.get("/admin/audit-logs")
 async def get_audit_logs(user=Depends(require_admin), limit: int = 100, skip: int = 0):
     return await db.audit_logs.find({}, {"_id": 0}).sort("timestamp", -1).skip(skip).limit(min(limit, 500)).to_list(min(limit, 500))
@@ -608,14 +771,20 @@ async def get_analytics(user=Depends(get_current_user)):
     approved = await db.files.count_documents({"status": "dc_approved"})
     rejected = await db.files.count_documents({"status": "dc_rejected"})
     delayed = await db.files.count_documents({"status": "delayed"})
+    high_priority = await db.files.count_documents({"priority": "high", "status": {"$nin": ["dc_approved", "dc_rejected"]}})
 
     dept_pending = {}
     for dept in ["tahsildar", "sp", "forest"]:
         dept_pending[dept] = await db.approvals.count_documents({"department": dept, "decision": None})
 
+    # Overdue files count
+    now = datetime.now(timezone.utc).isoformat()
+    overdue = await db.files.count_documents({"status": "submitted", "deadline": {"$lt": now}})
+
     return {
         "total": total, "draft": draft, "submitted": submitted,
         "approved": approved, "rejected": rejected, "delayed": delayed,
+        "high_priority": high_priority, "overdue": overdue,
         "department_pending": dept_pending,
     }
 
@@ -628,15 +797,16 @@ async def admin_full_edit_file(file_id: str, req: AdminFileEditRequest, user=Dep
         raise HTTPException(status_code=404, detail="File not found")
 
     updates = {}
-    for field in ["file_no", "year", "description", "tahsildar_location", "status", "dc_decision", "dc_remark", "adc_remark"]:
+    for field in ["file_no", "year", "description", "tahsildar_location", "status", "dc_decision", "dc_remark", "adc_remark", "adc_decision", "priority"]:
         val = getattr(req, field, None)
         if val is not None:
             updates[field] = val
 
     if req.is_locked is not None:
         updates["is_locked"] = req.is_locked
+    if req.departments is not None:
+        updates["departments"] = req.departments
 
-    # Regenerate file_number if file_no or year changed
     if "file_no" in updates or "year" in updates:
         new_file_no = updates.get("file_no", file_doc.get("file_no", ""))
         new_year = updates.get("year", file_doc.get("year", ""))
@@ -703,7 +873,10 @@ async def reminder_and_escalation_task():
             for file_doc in submitted_files:
                 if not file_doc.get("deadline"):
                     continue
-                deadline = datetime.fromisoformat(file_doc["deadline"]).replace(tzinfo=timezone.utc) if file_doc["deadline"][-1] != 'Z' else datetime.fromisoformat(file_doc["deadline"].replace('Z', '+00:00'))
+                deadline_str = file_doc["deadline"]
+                if deadline_str[-1] == 'Z':
+                    deadline_str = deadline_str.replace('Z', '+00:00')
+                deadline = datetime.fromisoformat(deadline_str).replace(tzinfo=timezone.utc)
 
                 if now > deadline:
                     await db.files.update_one({"id": file_doc["id"]}, {"$set": {"status": "delayed"}})
@@ -720,7 +893,10 @@ async def reminder_and_escalation_task():
 
                 pending = await db.approvals.find({"file_id": file_doc["id"], "decision": None}, {"_id": 0}).to_list(10)
                 for appr in pending:
-                    last_r = datetime.fromisoformat(appr["last_reminder_at"]).replace(tzinfo=timezone.utc) if appr["last_reminder_at"][-1] != 'Z' else datetime.fromisoformat(appr["last_reminder_at"].replace('Z', '+00:00'))
+                    last_r_str = appr["last_reminder_at"]
+                    if last_r_str[-1] == 'Z':
+                        last_r_str = last_r_str.replace('Z', '+00:00')
+                    last_r = datetime.fromisoformat(last_r_str).replace(tzinfo=timezone.utc)
                     if (now - last_r).total_seconds() >= 2 * 86400:
                         target_role = "forest_officer" if appr["department"] == "forest" else appr["department"]
                         await db.notifications.insert_one({

@@ -10,92 +10,45 @@ import { useAuth } from '../context/AuthContext';
 import { Colors, Spacing, Radius } from '../constants/theme';
 import { AppDialog } from '../components/AppDialog';
 
-const TAHSILDAR_LOCATIONS = [
-  'Mangaluru', 'Bantwal', 'Mulki', 'Moodabidri',
-  'Puttur', 'Sulya', 'Kadaba', 'Ullala', 'Belthangady',
+const ROLES = [
+  { key: 'case_worker', label: 'Case Worker', icon: 'file-document-edit', user: 'caseworker', pass: 'case123', color: '#2563EB' },
+  { key: 'admin', label: 'System Admin', icon: 'shield-crown', user: 'admin', pass: 'admin123', color: '#7C3AED' },
+  { key: 'sp', label: 'Superintendent of Police', icon: 'shield-star', user: 'sp', pass: 'sp123', color: '#0891B2' },
+  { key: 'forest_officer', label: 'Forest Officer (DFO/DCF)', icon: 'pine-tree', user: 'forest', pass: 'forest123', color: '#059669' },
+  { key: 'adc', label: 'Asst. Commissioner (ADC)', icon: 'account-tie', user: 'adc', pass: 'adc123', color: '#D97706' },
+  { key: 'dc', label: 'Deputy Commissioner (DC)', icon: 'gavel', user: 'dc', pass: 'dc123', color: '#DC2626' },
 ];
 
-const ROLE_CATEGORIES = [
-  {
-    id: 'case_worker', title: 'Case Worker', icon: 'clipboard-text-outline' as const,
-    roles: [{ role: 'case_worker', label: 'Case Worker', username: 'caseworker' }],
-  },
-  {
-    id: 'tahsildar', title: 'Tahsildar', icon: 'office-building' as const,
-    roles: TAHSILDAR_LOCATIONS.map(loc => ({
-      role: 'tahsildar', label: `Tahsildar - ${loc}`, username: `tah_${loc.toLowerCase()}`,
-    })),
-  },
-  {
-    id: 'dept_officers', title: 'Department Officers', icon: 'shield-account' as const,
-    roles: [
-      { role: 'sp', label: 'Superintendent of Police', username: 'sp' },
-      { role: 'forest_officer', label: 'Forest Officer (DFO/DCF)', username: 'forest' },
-    ],
-  },
-  {
-    id: 'senior', title: 'Senior Officers & Admin', icon: 'account-tie' as const,
-    roles: [
-      { role: 'adc', label: 'Assistant Commissioner (ADC)', username: 'adc' },
-      { role: 'dc', label: 'Deputy Commissioner (DC)', username: 'dc' },
-      { role: 'admin', label: 'System Admin', username: 'admin' },
-    ],
-  },
+const TAHSILDARS = [
+  { key: 'tah_mangaluru', label: 'Mangaluru', user: 'tah_mangaluru' },
+  { key: 'tah_bantwal', label: 'Bantwal', user: 'tah_bantwal' },
+  { key: 'tah_mulki', label: 'Mulki', user: 'tah_mulki' },
+  { key: 'tah_moodabidri', label: 'Moodabidri', user: 'tah_moodabidri' },
+  { key: 'tah_puttur', label: 'Puttur', user: 'tah_puttur' },
+  { key: 'tah_sulya', label: 'Sulya', user: 'tah_sulya' },
+  { key: 'tah_kadaba', label: 'Kadaba', user: 'tah_kadaba' },
+  { key: 'tah_ullala', label: 'Ullala', user: 'tah_ullala' },
+  { key: 'tah_belthangady', label: 'Belthangady', user: 'tah_belthangady' },
 ];
-
-type Step = 'category' | 'subrole' | 'login';
 
 export default function LoginScreen() {
+  const { user, login, isLoading } = useAuth();
   const router = useRouter();
-  const { user, isLoading, login } = useAuth();
-  const [step, setStep] = useState<Step>('category');
-  const [selectedCategory, setSelectedCategory] = useState<typeof ROLE_CATEGORIES[0] | null>(null);
-  const [selectedRole, setSelectedRole] = useState<{ role: string; label: string; username: string } | null>(null);
+  const [selectedRole, setSelectedRole] = useState<any>(null);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
-  const [errorDialog, setErrorDialog] = useState<{ visible: boolean; title: string; message: string }>({ visible: false, title: '', message: '' });
+  const [errorDialog, setErrorDialog] = useState({ visible: false, title: '', message: '' });
+  const [showTahsildars, setShowTahsildars] = useState(false);
 
   if (!isLoading && user) {
     return <Redirect href="/(tabs)" />;
   }
 
-  if (isLoading) {
-    return (
-      <View style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-      </View>
-    );
-  }
-
-  const handleCategorySelect = (cat: typeof ROLE_CATEGORIES[0]) => {
-    setSelectedCategory(cat);
-    if (cat.roles.length === 1) {
-      setSelectedRole(cat.roles[0]);
-      setUsername(cat.roles[0].username);
-      setStep('login');
-    } else {
-      setStep('subrole');
-    }
-  };
-
-  const handleRoleSelect = (role: { role: string; label: string; username: string }) => {
+  const selectRole = (role: any) => {
     setSelectedRole(role);
-    setUsername(role.username);
-    setStep('login');
-  };
-
-  const handleBack = () => {
-    if (step === 'login' && selectedCategory && selectedCategory.roles.length > 1) {
-      setStep('subrole');
-      setPassword('');
-    } else {
-      setStep('category');
-      setSelectedCategory(null);
-      setSelectedRole(null);
-      setUsername('');
-      setPassword('');
-    }
+    setUsername(role.user);
+    setPassword(role.pass || 'tah123');
   };
 
   const handleLogin = async () => {
@@ -113,121 +66,85 @@ export default function LoginScreen() {
     }
   };
 
+  if (isLoading) {
+    return (
+      <SafeAreaView style={s.container}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </SafeAreaView>
+    );
+  }
+
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+    <SafeAreaView style={s.container}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
           {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.emblem}>
-              <MaterialCommunityIcons name="shield-check" size={40} color={Colors.primaryForeground} />
-            </View>
-            <Text style={styles.title}>DK FILE TRACKER</Text>
-            <Text style={styles.subtitle}>Government File Tracking System</Text>
-            <Text style={styles.district}>Dakshina Kannada District</Text>
+          <View style={s.header}>
+            <MaterialCommunityIcons name="file-lock" size={40} color={Colors.primary} />
+            <Text style={s.title}>Government File Tracker</Text>
+            <Text style={s.subtitle}>Dakshina Kannada District</Text>
           </View>
 
-          {/* Step indicator */}
-          {step !== 'category' && (
-            <TouchableOpacity testID="back-btn" style={styles.backBtn} onPress={handleBack}>
-              <MaterialCommunityIcons name="arrow-left" size={20} color={Colors.primary} />
-              <Text style={styles.backText}>Back</Text>
-            </TouchableOpacity>
-          )}
+          {selectedRole ? (
+            /* Login Form */
+            <View style={s.loginForm}>
+              <TouchableOpacity style={s.backBtn} onPress={() => { setSelectedRole(null); setShowTahsildars(false); }}>
+                <MaterialCommunityIcons name="arrow-left" size={20} color={Colors.primary} />
+                <Text style={s.backText}>Back to roles</Text>
+              </TouchableOpacity>
 
-          {/* Category Selection */}
-          {step === 'category' && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>SELECT YOUR ROLE</Text>
-              {ROLE_CATEGORIES.map((cat) => (
-                <TouchableOpacity
-                  key={cat.id}
-                  testID={`role-category-${cat.id}`}
-                  style={styles.categoryCard}
-                  onPress={() => handleCategorySelect(cat)}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.categoryIcon}>
-                    <MaterialCommunityIcons name={cat.icon} size={28} color={Colors.primary} />
-                  </View>
-                  <View style={styles.categoryInfo}>
-                    <Text style={styles.categoryTitle}>{cat.title}</Text>
-                    <Text style={styles.categoryCount}>
-                      {cat.roles.length === 1 ? '1 role' : `${cat.roles.length} roles`}
-                    </Text>
-                  </View>
-                  <MaterialCommunityIcons name="chevron-right" size={24} color={Colors.mutedForeground} />
-                </TouchableOpacity>
-              ))}
+              <View style={[s.selectedBadge, { backgroundColor: selectedRole.color || '#1A1A2E' }]}>
+                <MaterialCommunityIcons name={selectedRole.icon || 'account'} size={20} color="#FFF" />
+                <Text style={s.selectedLabel}>{selectedRole.label}</Text>
+              </View>
+
+              <View style={s.inputGroup}>
+                <Text style={s.label}>USERNAME</Text>
+                <TextInput testID="username-input" style={s.input} value={username} onChangeText={setUsername} autoCapitalize="none" placeholderTextColor={Colors.mutedForeground} />
+              </View>
+
+              <View style={s.inputGroup}>
+                <Text style={s.label}>PASSWORD</Text>
+                <TextInput testID="password-input" style={s.input} value={password} onChangeText={setPassword} secureTextEntry placeholderTextColor={Colors.mutedForeground} />
+              </View>
+
+              <TouchableOpacity testID="login-btn" style={s.loginBtn} onPress={handleLogin} disabled={loggingIn} activeOpacity={0.7}>
+                {loggingIn ? <ActivityIndicator color="#FFF" /> : <Text style={s.loginBtnText}>SIGN IN</Text>}
+              </TouchableOpacity>
             </View>
-          )}
+          ) : (
+            /* Role Selection */
+            <View style={s.roleGrid}>
+              <Text style={s.sectionTitle}>Select Your Role</Text>
 
-          {/* Sub-role Selection */}
-          {step === 'subrole' && selectedCategory && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{selectedCategory.title.toUpperCase()}</Text>
-              {selectedCategory.roles.map((role) => (
-                <TouchableOpacity
-                  key={role.username}
-                  testID={`role-option-${role.username}`}
-                  style={styles.roleCard}
-                  onPress={() => handleRoleSelect(role)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.roleLabel}>{role.label}</Text>
+              {ROLES.map(role => (
+                <TouchableOpacity key={role.key} style={s.roleCard} onPress={() => selectRole(role)} activeOpacity={0.7}>
+                  <View style={[s.roleIcon, { backgroundColor: role.color + '18' }]}>
+                    <MaterialCommunityIcons name={role.icon as any} size={24} color={role.color} />
+                  </View>
+                  <Text style={s.roleLabel}>{role.label}</Text>
                   <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.mutedForeground} />
                 </TouchableOpacity>
               ))}
-            </View>
-          )}
 
-          {/* Login Form */}
-          {step === 'login' && selectedRole && (
-            <View style={styles.section}>
-              <View style={styles.roleTag}>
-                <Text style={styles.roleTagText}>{selectedRole.label}</Text>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>USERNAME</Text>
-                <TextInput
-                  testID="username-input"
-                  style={styles.input}
-                  value={username}
-                  onChangeText={setUsername}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  placeholder="Enter username"
-                  placeholderTextColor={Colors.mutedForeground}
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>PASSWORD</Text>
-                <TextInput
-                  testID="password-input"
-                  style={styles.input}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                  placeholder="Enter password"
-                  placeholderTextColor={Colors.mutedForeground}
-                />
-              </View>
-
-              <TouchableOpacity
-                testID="login-btn"
-                style={[styles.loginBtn, loggingIn && styles.loginBtnDisabled]}
-                onPress={handleLogin}
-                disabled={loggingIn}
-                activeOpacity={0.8}
-              >
-                {loggingIn ? (
-                  <ActivityIndicator color={Colors.primaryForeground} />
-                ) : (
-                  <Text style={styles.loginBtnText}>SIGN IN</Text>
-                )}
+              {/* Tahsildar Group */}
+              <TouchableOpacity style={s.roleCard} onPress={() => setShowTahsildars(!showTahsildars)} activeOpacity={0.7}>
+                <View style={[s.roleIcon, { backgroundColor: '#F59E0B18' }]}>
+                  <MaterialCommunityIcons name="map-marker-multiple" size={24} color="#F59E0B" />
+                </View>
+                <Text style={s.roleLabel}>Tahsildars ({TAHSILDARS.length})</Text>
+                <MaterialCommunityIcons name={showTahsildars ? 'chevron-up' : 'chevron-down'} size={20} color={Colors.mutedForeground} />
               </TouchableOpacity>
+
+              {showTahsildars && TAHSILDARS.map(t => (
+                <TouchableOpacity key={t.key} style={[s.roleCard, s.subRole]} onPress={() => selectRole({ ...t, icon: 'map-marker', color: '#F59E0B', pass: 'tah123' })} activeOpacity={0.7}>
+                  <View style={[s.roleIcon, { backgroundColor: '#F59E0B10', width: 32, height: 32 }]}>
+                    <MaterialCommunityIcons name="map-marker" size={16} color="#F59E0B" />
+                  </View>
+                  <Text style={s.roleLabel}>Tahsildar - {t.label}</Text>
+                  <MaterialCommunityIcons name="chevron-right" size={18} color={Colors.mutedForeground} />
+                </TouchableOpacity>
+              ))}
             </View>
           )}
         </ScrollView>
@@ -237,83 +154,46 @@ export default function LoginScreen() {
         visible={errorDialog.visible}
         title={errorDialog.title}
         message={errorDialog.message}
-        buttons={[
-          { text: 'OK', onPress: () => setErrorDialog({ ...errorDialog, visible: false }) },
-        ]}
+        buttons={[{ text: 'OK', onPress: () => setErrorDialog({ ...errorDialog, visible: false }) }]}
         onDismiss={() => setErrorDialog({ ...errorDialog, visible: false })}
       />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  center: { justifyContent: 'center', alignItems: 'center' },
-  scrollContent: { paddingBottom: 40 },
-  header: {
-    backgroundColor: Colors.primary,
-    paddingVertical: 40,
-    paddingHorizontal: Spacing.lg,
-    alignItems: 'center',
-  },
-  emblem: {
-    width: 72, height: 72, borderRadius: 36,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.md,
-  },
-  title: { fontSize: 28, fontWeight: '800', color: Colors.primaryForeground, letterSpacing: 1 },
-  subtitle: { fontSize: 14, color: 'rgba(255,255,255,0.7)', marginTop: Spacing.xs },
-  district: { fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 2, letterSpacing: 0.5 },
-  backBtn: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: Spacing.lg, paddingTop: Spacing.md,
-  },
-  backText: { fontSize: 14, color: Colors.primary, marginLeft: 4, fontWeight: '600' },
-  section: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.lg },
-  sectionTitle: {
-    fontSize: 12, fontWeight: '700', color: Colors.mutedForeground,
-    letterSpacing: 1.5, marginBottom: Spacing.md,
-  },
-  categoryCard: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.background, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: Radius.lg, padding: Spacing.md,
-    marginBottom: Spacing.sm,
-  },
-  categoryIcon: {
-    width: 48, height: 48, borderRadius: Radius.md,
-    backgroundColor: Colors.surface, justifyContent: 'center', alignItems: 'center',
-  },
-  categoryInfo: { flex: 1, marginLeft: Spacing.md },
-  categoryTitle: { fontSize: 16, fontWeight: '600', color: Colors.secondaryForeground },
-  categoryCount: { fontSize: 12, color: Colors.mutedForeground, marginTop: 2 },
+  scroll: { padding: Spacing.md, paddingBottom: 40 },
+  header: { alignItems: 'center', marginBottom: 24, marginTop: 12 },
+  title: { fontSize: 22, fontWeight: '800', color: Colors.foreground, marginTop: 8 },
+  subtitle: { fontSize: 13, color: Colors.mutedForeground, marginTop: 2 },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: Colors.mutedForeground, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
+  roleGrid: { gap: 6 },
   roleCard: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: Colors.surface, borderRadius: Radius.md,
-    padding: Spacing.md, marginBottom: Spacing.sm,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card,
+    borderRadius: Radius.md, padding: 14, gap: 12,
     borderWidth: 1, borderColor: Colors.border,
   },
-  roleLabel: { fontSize: 15, fontWeight: '500', color: Colors.secondaryForeground },
-  roleTag: {
-    backgroundColor: Colors.primary, borderRadius: Radius.sm,
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
-    alignSelf: 'flex-start', marginBottom: Spacing.lg,
+  subRole: { marginLeft: 24, borderColor: '#F59E0B30' },
+  roleIcon: { width: 40, height: 40, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  roleLabel: { flex: 1, fontSize: 14, fontWeight: '600', color: Colors.foreground },
+  loginForm: { gap: 16 },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  backText: { fontSize: 14, color: Colors.primary, fontWeight: '600' },
+  selectedBadge: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16,
   },
-  roleTagText: { fontSize: 12, fontWeight: '700', color: Colors.primaryForeground, letterSpacing: 0.5 },
-  inputGroup: { marginBottom: Spacing.md },
-  inputLabel: {
-    fontSize: 11, fontWeight: '700', color: Colors.mutedForeground,
-    letterSpacing: 1, marginBottom: 6,
-  },
+  selectedLabel: { fontSize: 15, fontWeight: '700', color: '#FFF' },
+  inputGroup: { gap: 6 },
+  label: { fontSize: 11, fontWeight: '700', color: Colors.mutedForeground, letterSpacing: 1 },
   input: {
-    height: 48, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: Radius.md, paddingHorizontal: Spacing.md,
-    fontSize: 16, color: Colors.secondaryForeground, backgroundColor: Colors.surface,
+    backgroundColor: Colors.card, borderRadius: Radius.md, padding: 14,
+    fontSize: 15, color: Colors.foreground, borderWidth: 1, borderColor: Colors.border,
   },
   loginBtn: {
-    height: 52, backgroundColor: Colors.primary, borderRadius: Radius.md,
-    justifyContent: 'center', alignItems: 'center', marginTop: Spacing.md,
+    backgroundColor: Colors.primary, borderRadius: Radius.md, height: 50,
+    justifyContent: 'center', alignItems: 'center', marginTop: 8,
   },
-  loginBtnDisabled: { opacity: 0.6 },
-  loginBtnText: { fontSize: 16, fontWeight: '700', color: Colors.primaryForeground, letterSpacing: 1 },
+  loginBtnText: { fontSize: 15, fontWeight: '700', color: Colors.primaryForeground, letterSpacing: 1 },
 });
