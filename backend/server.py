@@ -730,7 +730,7 @@ async def delete_user(user_id: str, user=Depends(require_admin)):
 async def get_config(user=Depends(require_admin)):
     config = await db.app_config.find_one({"key": "placeholders"}, {"_id": 0})
     if not config:
-        config = {
+        default_config = {
             "key": "placeholders",
             "tahsildar_locations": TAHSILDAR_LOCATIONS,
             "department_labels": {"tahsildar": "Tahsildar", "sp": "SP (Police)", "forest": "Forest Department"},
@@ -738,7 +738,8 @@ async def get_config(user=Depends(require_admin)):
                            "sp": "Superintendent of Police", "forest_officer": "Forest Officer",
                            "adc": "Assistant Commissioner (ADC)", "dc": "Deputy Commissioner (DC)"},
         }
-        await db.app_config.insert_one(config)
+        await db.app_config.insert_one(dict(default_config))
+        return default_config
     return config
 
 @api_router.put("/admin/config")
