@@ -227,6 +227,11 @@ async def get_me(user=Depends(get_current_user)):
         "is_active": user["is_active"]
     }
 
+@api_router.post("/auth/logout")
+async def auth_logout(user=Depends(get_current_user)):
+    await log_audit(user["id"], user["display_name"], user["role"], "logout", details="User logged out")
+    return {"message": "Logged out successfully"}
+
 # ==================== FILE ROUTES ====================
 
 async def generate_file_number(file_no: str, year: str):

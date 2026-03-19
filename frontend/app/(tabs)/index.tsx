@@ -50,8 +50,7 @@ export default function Dashboard() {
   const doLogout = async () => {
     setIsLoggingOut(true);
     setShowLogoutConfirm(false);
-    try { await logout(); } catch (e) { console.error(e); }
-    router.replace('/');
+    await logout();
   };
 
   const role = user?.role || '';

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { fetchAPI } from '../constants/api';
 
 interface User {
@@ -56,8 +57,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // Call server-side logout for audit trail (best effort)
+    try {
+      await fetchAPI('/auth/logout', { method: 'POST' });
+    } catch {
+      // Ignore - token may already be invalid
+    }
+
+    // Clear local auth state
     await AsyncStorage.removeItem('auth_token');
     setUser(null);
+
+    // Force redirect to login on web (React state changes alone may not trigger navigation)
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.location.href = '/';
+    }
   }, []);
 
   return (

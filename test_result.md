@@ -273,6 +273,18 @@ backend:
         agent: "testing"
         comment: "✅ NEW ANALYTICS FIELDS TESTED - GET /api/admin/analytics now includes high_priority and overdue counts. Successfully tested: Total files: 2, High priority: 1, Overdue: 0. All expected fields present in response."
 
+  - task: "Logout API Endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ LOGOUT ENDPOINT TESTS PASSED (5/5) - POST /api/auth/logout working perfectly. Authenticated logout returns 'Logged out successfully' message (200 status). Unauthorized requests correctly rejected with 401. Audit logging functional - logout actions properly recorded with user details and timestamps. All 7 user roles login verification successful (minor: forest role shows as 'forest_officer' in DB, not 'forest')."
+
 frontend:
   - task: "File Creation Form (file_no, year, description)"
     implemented: true
@@ -342,7 +354,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "NEW FEATURES TESTING COMPLETED - Comprehensive testing of all major updates finished"
+    - "LOGOUT ENDPOINT TESTING COMPLETED - All requested test scenarios passed successfully"
   stuck_tasks:
     - "Admin Config API - Minor serialization issue with MongoDB ObjectId"
   test_all: false
@@ -359,3 +371,5 @@ agent_communication:
     message: "✅ POST-DEPLOYMENT VERIFICATION COMPLETE (17/17 - 100% SUCCESS RATE)! Critical deployment fixes validated: 1) BCRYPT MIGRATION - All 6 user roles (caseworker, admin, sp, forest, dc, tah_mangaluru) authenticate successfully with new bcrypt hashing. 2) BATCH QUERY OPTIMIZATION - File listing with approvals_summary working efficiently. 3) COMPLETE WORKFLOW - Full end-to-end testing passed: Auth → File Creation → Search → Submit → Parallel Approvals → DC Decision → Admin Edit/Delete. All APIs responding correctly from production URL. Backend is production-ready and deployment fixes are working perfectly!"
   - agent: "testing"
     message: "🚀 NEW FEATURES TESTING COMPLETE (9/10 - 90% SUCCESS RATE)! ✅ ALL 7 USER ROLES authenticated successfully ✅ File creation with departments+priority working perfectly ✅ NEW approve/reject/na decision format working ✅ NEW ADC decision endpoint functional ✅ Admin user edit working ✅ Analytics with high_priority+overdue fields working ✅ Full priority workflow tested successfully ❌ MINOR: Admin config API has ObjectId serialization issue (500 error) - needs _id field exclusion. Core file tracking workflow is 100% functional!"
+  - agent: "testing"
+    message: "✅ LOGOUT ENDPOINT TESTING COMPLETE (11/12 - 92% SUCCESS)! Quick test verification passed all requested scenarios: 1) Caseworker login ✅ 2) Authenticated logout returns 'Logged out successfully' ✅ 3) Audit log verification shows logout action recorded ✅ 4) Unauthorized logout correctly returns 401 ✅ 5) All 7 user roles login verification ✅ (Minor: forest role stored as 'forest_officer' in DB). Backend logout functionality fully operational with proper audit logging!"
