@@ -9,8 +9,9 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { Colors, Spacing, Radius } from '../constants/theme';
 import { AppDialog } from '../components/AppDialog';
+import { fetchAPI } from '../constants/api';
 
-const ROLES = [
+const DEFAULT_ROLES = [
   { key: 'case_worker', label: 'Case Worker', icon: 'file-document-edit', user: 'caseworker', pass: 'case123', color: '#2563EB' },
   { key: 'admin', label: 'System Admin', icon: 'shield-crown', user: 'admin', pass: 'admin123', color: '#7C3AED' },
   { key: 'sp', label: 'Superintendent of Police', icon: 'shield-star', user: 'sp', pass: 'sp123', color: '#0891B2' },
@@ -19,7 +20,7 @@ const ROLES = [
   { key: 'dc', label: 'Deputy Commissioner (DC)', icon: 'gavel', user: 'dc', pass: 'dc123', color: '#DC2626' },
 ];
 
-const TAHSILDARS = [
+const DEFAULT_TAHSILDARS = [
   { key: 'tah_mangaluru', label: 'Mangaluru', user: 'tah_mangaluru' },
   { key: 'tah_bantwal', label: 'Bantwal', user: 'tah_bantwal' },
   { key: 'tah_mulki', label: 'Mulki', user: 'tah_mulki' },
@@ -40,6 +41,36 @@ export default function LoginScreen() {
   const [loggingIn, setLoggingIn] = useState(false);
   const [errorDialog, setErrorDialog] = useState({ visible: false, title: '', message: '' });
   const [showTahsildars, setShowTahsildars] = useState(false);
+  const [roles, setRoles] = useState(DEFAULT_ROLES);
+  const [tahsildars, setTahsildars] = useState(DEFAULT_TAHSILDARS);
+  const [configLoaded, setConfigLoaded] = useState(false);
+
+  // Fetch dynamic login labels from backend
+  useEffect(() => {
+    const loadLoginConfig = async () => {
+      try {
+        const config = await fetchAPI('/public/login-config');
+        if (config?.role_labels) {
+          setRoles(prev => prev.map(r => ({
+            ...r,
+            label: config.role_labels[r.key] || r.label,
+          })));
+        }
+        if (config?.tahsildar_locations && config.tahsildar_locations.length > 0) {
+          setTahsildars(config.tahsildar_locations.map((loc: string) => ({
+            key: `tah_${loc.toLowerCase().replace(/\s+/g, '_')}`,
+            label: loc,
+            user: `tah_${loc.toLowerCase().replace(/\s+/g, '_')}`,
+          })));
+        }
+      } catch (e) {
+        console.log('Using default login config');
+      } finally {
+        setConfigLoaded(true);
+      }
+    };
+    loadLoginConfig();
+  }, []);
 
   if (!isLoading && user) {
     return <Redirect href="/(tabs)" />;
@@ -117,7 +148,7 @@ export default function LoginScreen() {
             <View style={s.roleGrid}>
               <Text style={s.sectionTitle}>Select Your Role</Text>
 
-              {ROLES.map(role => (
+              {roles.map(role => (
                 <TouchableOpacity key={role.key} style={s.roleCard} onPress={() => selectRole(role)} activeOpacity={0.7}>
                   <View style={[s.roleIcon, { backgroundColor: role.color + '18' }]}>
                     <MaterialCommunityIcons name={role.icon as any} size={24} color={role.color} />
@@ -132,11 +163,11 @@ export default function LoginScreen() {
                 <View style={[s.roleIcon, { backgroundColor: '#F59E0B18' }]}>
                   <MaterialCommunityIcons name="map-marker-multiple" size={24} color="#F59E0B" />
                 </View>
-                <Text style={s.roleLabel}>Tahsildars ({TAHSILDARS.length})</Text>
+                <Text style={s.roleLabel}>Tahsildars ({tahsildars.length})</Text>
                 <MaterialCommunityIcons name={showTahsildars ? 'chevron-up' : 'chevron-down'} size={20} color={Colors.mutedForeground} />
               </TouchableOpacity>
 
-              {showTahsildars && TAHSILDARS.map(t => (
+              {showTahsildars && tahsildars.map(t => (
                 <TouchableOpacity key={t.key} style={[s.roleCard, s.subRole]} onPress={() => selectRole({ ...t, icon: 'map-marker', color: '#F59E0B', pass: 'tah123' })} activeOpacity={0.7}>
                   <View style={[s.roleIcon, { backgroundColor: '#F59E0B10', width: 32, height: 32 }]}>
                     <MaterialCommunityIcons name="map-marker" size={16} color="#F59E0B" />

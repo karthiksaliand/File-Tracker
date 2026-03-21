@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Backend Test Suite for Government File Tracking App - Department Privacy Feature
-Tests the new Department Privacy feature where department users can only see their own approval status.
+Backend Test Suite for Government File Tracking App - Login Config Testing
+Tests the public login config endpoint and admin config management functionality.
 """
 
 import requests
@@ -12,352 +12,280 @@ from typing import Dict, Any, Optional
 # Backend URL from frontend/.env
 BASE_URL = "https://dept-workflow-2.preview.emergentagent.com/api"
 
-class TestRunner:
+class LoginConfigTestRunner:
     def __init__(self):
-        self.tokens = {}
-        self.test_file_id = None
+        self.admin_token = None
         self.passed = 0
         self.failed = 0
+        self.original_sp_label = None
         
     def log(self, message: str, level: str = "INFO"):
         print(f"[{level}] {message}")
         
-    def login_user(self, username: str, password: str) -> Optional[str]:
-        """Login user and return token"""
+    def login_admin(self) -> Optional[str]:
+        """Login as admin and return token"""
         try:
             response = requests.post(f"{BASE_URL}/auth/login", 
-                                   json={"username": username, "password": password})
+                                   json={"username": "admin", "password": "admin123"})
             if response.status_code == 200:
                 data = response.json()
                 token = data.get("token")
-                self.tokens[username] = token
-                self.log(f"✅ Login successful for {username} (role: {data['user']['role']})")
+                self.admin_token = token
+                self.log(f"✅ Admin login successful")
                 return token
             else:
-                self.log(f"❌ Login failed for {username}: {response.status_code} - {response.text}", "ERROR")
+                self.log(f"❌ Admin login failed: {response.status_code} - {response.text}", "ERROR")
                 return None
         except Exception as e:
-            self.log(f"❌ Login error for {username}: {str(e)}", "ERROR")
+            self.log(f"❌ Admin login error: {str(e)}", "ERROR")
             return None
     
-    def make_request(self, method: str, endpoint: str, token: str, data: Dict = None) -> requests.Response:
-        """Make authenticated request"""
-        headers = {"Authorization": f"Bearer {token}"}
+    def make_authenticated_request(self, method: str, endpoint: str, data: Dict = None) -> requests.Response:
+        """Make authenticated request with admin token"""
+        headers = {"Authorization": f"Bearer {self.admin_token}"}
         if method.upper() == "GET":
             return requests.get(f"{BASE_URL}{endpoint}", headers=headers)
-        elif method.upper() == "POST":
-            return requests.post(f"{BASE_URL}{endpoint}", headers=headers, json=data)
         elif method.upper() == "PUT":
             return requests.put(f"{BASE_URL}{endpoint}", headers=headers, json=data)
-        elif method.upper() == "DELETE":
-            return requests.delete(f"{BASE_URL}{endpoint}", headers=headers)
     
-    def test_department_privacy_workflow(self):
-        """Test the complete Department Privacy workflow"""
-        self.log("🚀 Starting Department Privacy Feature Test")
+    def test_public_login_config(self):
+        """Test 1: GET /api/public/login-config (NO auth token needed)"""
+        self.log("\n=== Test 1: Public Login Config Endpoint ===")
         
-        # Step 1: Login as caseworker
-        self.log("\n=== Step 1: Login as caseworker ===")
-        caseworker_token = self.login_user("caseworker", "case123")
-        if not caseworker_token:
-            self.failed += 1
-            return False
-        
-        # Step 2: Create file routed to all 3 departments
-        self.log("\n=== Step 2: Create file routed to all 3 departments ===")
-        file_data = {
-            "file_no": "PRIV001",
-            "year": "2026", 
-            "description": "Privacy Test File",
-            "tahsildar_location": "Mangaluru",
-            "departments": ["tahsildar", "sp", "forest"],
-            "priority": "normal"
-        }
-        
-        response = self.make_request("POST", "/files", caseworker_token, file_data)
-        if response.status_code == 200:
-            file_info = response.json()
-            self.test_file_id = file_info["id"]
-            self.log(f"✅ File created successfully: {file_info['file_number']} (ID: {self.test_file_id})")
-            self.passed += 1
-        else:
-            self.log(f"❌ File creation failed: {response.status_code} - {response.text}", "ERROR")
-            self.failed += 1
-            return False
-        
-        # Step 3: Submit the file
-        self.log("\n=== Step 3: Submit the file ===")
-        response = self.make_request("POST", f"/files/{self.test_file_id}/submit", caseworker_token)
-        if response.status_code == 200:
-            self.log("✅ File submitted successfully")
-            self.passed += 1
-        else:
-            self.log(f"❌ File submission failed: {response.status_code} - {response.text}", "ERROR")
-            self.failed += 1
-            return False
-        
-        # Step 4-6: Test SP user privacy
-        self.log("\n=== Step 4-6: Test SP user privacy ===")
-        sp_token = self.login_user("sp", "sp123")
-        if not sp_token:
-            self.failed += 1
-            return False
+        try:
+            # Test without authentication
+            response = requests.get(f"{BASE_URL}/public/login-config")
             
-        # Test SP file list - should only see SP approval
-        response = self.make_request("GET", "/files", sp_token)
-        if response.status_code == 200:
-            files = response.json()
-            test_file = next((f for f in files if f["id"] == self.test_file_id), None)
-            if test_file:
-                approvals_summary = test_file.get("approvals_summary", {})
-                if "sp" in approvals_summary and "tahsildar" not in approvals_summary and "forest" not in approvals_summary:
-                    self.log("✅ SP file list privacy: Only SP approval visible in approvals_summary")
+            if response.status_code == 200:
+                data = response.json()
+                self.log(f"✅ Public login config endpoint accessible (200 OK)")
+                
+                # Check if response has required fields
+                if "role_labels" in data and "tahsildar_locations" in data:
+                    self.log(f"✅ Response contains required fields: role_labels and tahsildar_locations")
                     self.passed += 1
+                    
+                    # Store original SP label for later restoration
+                    self.original_sp_label = data["role_labels"].get("sp", "Superintendent of Police")
+                    
+                    # Verify expected roles are present
+                    expected_roles = ["case_worker", "admin", "sp", "forest_officer", "adc", "dc", "tahsildar"]
+                    role_labels = data["role_labels"]
+                    missing_roles = [role for role in expected_roles if role not in role_labels]
+                    
+                    if not missing_roles:
+                        self.log(f"✅ All expected roles present: {list(role_labels.keys())}")
+                        self.passed += 1
+                    else:
+                        self.log(f"❌ Missing roles: {missing_roles}", "ERROR")
+                        self.failed += 1
+                    
+                    # Verify tahsildar_locations is an array
+                    tahsildar_locations = data["tahsildar_locations"]
+                    if isinstance(tahsildar_locations, list) and len(tahsildar_locations) > 0:
+                        self.log(f"✅ tahsildar_locations is array with {len(tahsildar_locations)} locations: {tahsildar_locations[:3]}...")
+                        self.passed += 1
+                    else:
+                        self.log(f"❌ tahsildar_locations is not a valid array: {type(tahsildar_locations)}", "ERROR")
+                        self.failed += 1
+                        
+                    self.log(f"📋 Current role labels: {json.dumps(role_labels, indent=2)}")
+                    
                 else:
-                    self.log(f"❌ SP file list privacy FAILED: approvals_summary = {approvals_summary}", "ERROR")
+                    self.log(f"❌ Response missing required fields. Got: {list(data.keys())}", "ERROR")
                     self.failed += 1
             else:
-                self.log("❌ SP cannot see the test file in list", "ERROR")
+                self.log(f"❌ Public login config failed: {response.status_code} - {response.text}", "ERROR")
                 self.failed += 1
-        else:
-            self.log(f"❌ SP file list failed: {response.status_code} - {response.text}", "ERROR")
+                
+        except Exception as e:
+            self.log(f"❌ Public login config test error: {str(e)}", "ERROR")
             self.failed += 1
+    
+    def test_admin_config_update(self):
+        """Test 2-4: Admin config update functionality"""
+        self.log("\n=== Test 2-4: Admin Config Update ===")
         
-        # Test SP file detail - should only see SP approval
-        response = self.make_request("GET", f"/files/{self.test_file_id}", sp_token)
-        if response.status_code == 200:
-            file_detail = response.json()
-            approvals = file_detail.get("approvals", [])
-            sp_approvals = [a for a in approvals if a["department"] == "sp"]
-            other_approvals = [a for a in approvals if a["department"] != "sp"]
+        # First login as admin
+        if not self.login_admin():
+            self.failed += 1
+            return
+        
+        # Test 2: Get current admin config
+        self.log("\n--- Test 2: Get Admin Config ---")
+        try:
+            response = self.make_authenticated_request("GET", "/admin/config")
             
-            if len(sp_approvals) == 1 and len(other_approvals) == 0:
-                self.log("✅ SP file detail privacy: Only SP approval visible in approvals array")
+            if response.status_code == 200:
+                config_data = response.json()
+                self.log(f"✅ Admin config retrieved successfully")
                 self.passed += 1
+                
+                if "role_labels" in config_data:
+                    current_sp_label = config_data["role_labels"].get("sp", "Superintendent of Police")
+                    self.log(f"📋 Current SP label: '{current_sp_label}'")
+                else:
+                    self.log(f"⚠️ No role_labels in admin config, will create new one")
+                    
             else:
-                self.log(f"❌ SP file detail privacy FAILED: Found {len(sp_approvals)} SP approvals, {len(other_approvals)} other approvals", "ERROR")
+                self.log(f"❌ Admin config retrieval failed: {response.status_code} - {response.text}", "ERROR")
                 self.failed += 1
-        else:
-            self.log(f"❌ SP file detail failed: {response.status_code} - {response.text}", "ERROR")
+                return
+                
+        except Exception as e:
+            self.log(f"❌ Admin config retrieval error: {str(e)}", "ERROR")
             self.failed += 1
+            return
         
-        # Step 7-9: Test Forest user privacy
-        self.log("\n=== Step 7-9: Test Forest user privacy ===")
-        forest_token = self.login_user("forest", "forest123")
-        if not forest_token:
-            self.failed += 1
-            return False
+        # Test 3: Update SP role label
+        self.log("\n--- Test 3: Update SP Role Label ---")
+        try:
+            new_sp_label = "SP - Police Department"
+            update_data = {
+                "role_labels": {
+                    "case_worker": "Case Worker",
+                    "admin": "System Admin", 
+                    "tahsildar": "Tahsildar",
+                    "sp": new_sp_label,  # Changed label
+                    "forest_officer": "Forest Officer (DFO/DCF)",
+                    "adc": "Asst. Commissioner (ADC)",
+                    "dc": "Deputy Commissioner (DC)"
+                }
+            }
             
-        # Test Forest file list
-        response = self.make_request("GET", "/files", forest_token)
-        if response.status_code == 200:
-            files = response.json()
-            test_file = next((f for f in files if f["id"] == self.test_file_id), None)
-            if test_file:
-                approvals_summary = test_file.get("approvals_summary", {})
-                if "forest" in approvals_summary and "tahsildar" not in approvals_summary and "sp" not in approvals_summary:
-                    self.log("✅ Forest file list privacy: Only Forest approval visible in approvals_summary")
+            response = self.make_authenticated_request("PUT", "/admin/config", update_data)
+            
+            if response.status_code == 200:
+                self.log(f"✅ Admin config updated successfully")
+                self.passed += 1
+                
+                # Verify the update
+                updated_config = response.json()
+                if updated_config.get("role_labels", {}).get("sp") == new_sp_label:
+                    self.log(f"✅ SP label successfully updated to: '{new_sp_label}'")
                     self.passed += 1
                 else:
-                    self.log(f"❌ Forest file list privacy FAILED: approvals_summary = {approvals_summary}", "ERROR")
+                    self.log(f"❌ SP label not updated correctly. Got: '{updated_config.get('role_labels', {}).get('sp')}'", "ERROR")
                     self.failed += 1
+                    
             else:
-                self.log("❌ Forest cannot see the test file in list", "ERROR")
+                self.log(f"❌ Admin config update failed: {response.status_code} - {response.text}", "ERROR")
                 self.failed += 1
-        else:
-            self.log(f"❌ Forest file list failed: {response.status_code} - {response.text}", "ERROR")
+                return
+                
+        except Exception as e:
+            self.log(f"❌ Admin config update error: {str(e)}", "ERROR")
             self.failed += 1
+            return
         
-        # Test Forest file detail
-        response = self.make_request("GET", f"/files/{self.test_file_id}", forest_token)
-        if response.status_code == 200:
-            file_detail = response.json()
-            approvals = file_detail.get("approvals", [])
-            forest_approvals = [a for a in approvals if a["department"] == "forest"]
-            other_approvals = [a for a in approvals if a["department"] != "forest"]
+        # Test 4: Verify public endpoint reflects the change
+        self.log("\n--- Test 4: Verify Public Endpoint Reflects Change ---")
+        try:
+            response = requests.get(f"{BASE_URL}/public/login-config")
             
-            if len(forest_approvals) == 1 and len(other_approvals) == 0:
-                self.log("✅ Forest file detail privacy: Only Forest approval visible in approvals array")
-                self.passed += 1
-            else:
-                self.log(f"❌ Forest file detail privacy FAILED: Found {len(forest_approvals)} Forest approvals, {len(other_approvals)} other approvals", "ERROR")
-                self.failed += 1
-        else:
-            self.log(f"❌ Forest file detail failed: {response.status_code} - {response.text}", "ERROR")
-            self.failed += 1
-        
-        # Step 10-12: Test Tahsildar user privacy
-        self.log("\n=== Step 10-12: Test Tahsildar user privacy ===")
-        tah_token = self.login_user("tah_mangaluru", "tah123")
-        if not tah_token:
-            self.failed += 1
-            return False
-            
-        # Test Tahsildar file list
-        response = self.make_request("GET", "/files", tah_token)
-        if response.status_code == 200:
-            files = response.json()
-            test_file = next((f for f in files if f["id"] == self.test_file_id), None)
-            if test_file:
-                approvals_summary = test_file.get("approvals_summary", {})
-                if "tahsildar" in approvals_summary and "sp" not in approvals_summary and "forest" not in approvals_summary:
-                    self.log("✅ Tahsildar file list privacy: Only Tahsildar approval visible in approvals_summary")
+            if response.status_code == 200:
+                data = response.json()
+                public_sp_label = data.get("role_labels", {}).get("sp")
+                
+                if public_sp_label == new_sp_label:
+                    self.log(f"✅ Public endpoint reflects updated SP label: '{public_sp_label}'")
                     self.passed += 1
                 else:
-                    self.log(f"❌ Tahsildar file list privacy FAILED: approvals_summary = {approvals_summary}", "ERROR")
+                    self.log(f"❌ Public endpoint does not reflect change. Expected: '{new_sp_label}', Got: '{public_sp_label}'", "ERROR")
                     self.failed += 1
+                    
             else:
-                self.log("❌ Tahsildar cannot see the test file in list", "ERROR")
+                self.log(f"❌ Public endpoint verification failed: {response.status_code} - {response.text}", "ERROR")
                 self.failed += 1
-        else:
-            self.log(f"❌ Tahsildar file list failed: {response.status_code} - {response.text}", "ERROR")
+                
+        except Exception as e:
+            self.log(f"❌ Public endpoint verification error: {str(e)}", "ERROR")
             self.failed += 1
+    
+    def test_revert_changes(self):
+        """Test 5: Revert the changes back"""
+        self.log("\n=== Test 5: Revert Changes ===")
         
-        # Test Tahsildar file detail
-        response = self.make_request("GET", f"/files/{self.test_file_id}", tah_token)
-        if response.status_code == 200:
-            file_detail = response.json()
-            approvals = file_detail.get("approvals", [])
-            tah_approvals = [a for a in approvals if a["department"] == "tahsildar"]
-            other_approvals = [a for a in approvals if a["department"] != "tahsildar"]
+        if not self.admin_token:
+            self.log("❌ No admin token available for revert", "ERROR")
+            self.failed += 1
+            return
+        
+        try:
+            # Revert SP label back to original
+            revert_data = {
+                "role_labels": {
+                    "case_worker": "Case Worker",
+                    "admin": "System Admin",
+                    "tahsildar": "Tahsildar", 
+                    "sp": self.original_sp_label,  # Revert to original
+                    "forest_officer": "Forest Officer (DFO/DCF)",
+                    "adc": "Asst. Commissioner (ADC)",
+                    "dc": "Deputy Commissioner (DC)"
+                }
+            }
             
-            if len(tah_approvals) == 1 and len(other_approvals) == 0:
-                self.log("✅ Tahsildar file detail privacy: Only Tahsildar approval visible in approvals array")
+            response = self.make_authenticated_request("PUT", "/admin/config", revert_data)
+            
+            if response.status_code == 200:
+                self.log(f"✅ Config reverted successfully")
                 self.passed += 1
+                
+                # Verify revert
+                reverted_config = response.json()
+                if reverted_config.get("role_labels", {}).get("sp") == self.original_sp_label:
+                    self.log(f"✅ SP label reverted to original: '{self.original_sp_label}'")
+                    self.passed += 1
+                else:
+                    self.log(f"❌ SP label not reverted correctly", "ERROR")
+                    self.failed += 1
+                    
+                # Final verification with public endpoint
+                public_response = requests.get(f"{BASE_URL}/public/login-config")
+                if public_response.status_code == 200:
+                    public_data = public_response.json()
+                    final_sp_label = public_data.get("role_labels", {}).get("sp")
+                    
+                    if final_sp_label == self.original_sp_label:
+                        self.log(f"✅ Public endpoint shows reverted SP label: '{final_sp_label}'")
+                        self.passed += 1
+                    else:
+                        self.log(f"❌ Public endpoint does not show reverted label. Expected: '{self.original_sp_label}', Got: '{final_sp_label}'", "ERROR")
+                        self.failed += 1
+                        
             else:
-                self.log(f"❌ Tahsildar file detail privacy FAILED: Found {len(tah_approvals)} Tahsildar approvals, {len(other_approvals)} other approvals", "ERROR")
+                self.log(f"❌ Config revert failed: {response.status_code} - {response.text}", "ERROR")
                 self.failed += 1
-        else:
-            self.log(f"❌ Tahsildar file detail failed: {response.status_code} - {response.text}", "ERROR")
+                
+        except Exception as e:
+            self.log(f"❌ Config revert error: {str(e)}", "ERROR")
             self.failed += 1
-        
-        # Step 13-14: Test Admin can see all approvals
-        self.log("\n=== Step 13-14: Test Admin can see all approvals ===")
-        admin_token = self.login_user("admin", "admin123")
-        if not admin_token:
-            self.failed += 1
-            return False
-            
-        response = self.make_request("GET", f"/files/{self.test_file_id}", admin_token)
-        if response.status_code == 200:
-            file_detail = response.json()
-            approvals = file_detail.get("approvals", [])
-            departments = {a["department"] for a in approvals}
-            
-            if "tahsildar" in departments and "sp" in departments and "forest" in departments:
-                self.log("✅ Admin can see ALL 3 department approvals")
-                self.passed += 1
-            else:
-                self.log(f"❌ Admin privacy FAILED: Only sees departments {departments}, expected all 3", "ERROR")
-                self.failed += 1
-        else:
-            self.log(f"❌ Admin file detail failed: {response.status_code} - {response.text}", "ERROR")
-            self.failed += 1
-        
-        # Step 15-16: Test ADC can see all approvals
-        self.log("\n=== Step 15-16: Test ADC can see all approvals ===")
-        adc_token = self.login_user("ADC", "adc123")
-        if not adc_token:
-            self.failed += 1
-            return False
-            
-        response = self.make_request("GET", f"/files/{self.test_file_id}", adc_token)
-        if response.status_code == 200:
-            file_detail = response.json()
-            approvals = file_detail.get("approvals", [])
-            departments = {a["department"] for a in approvals}
-            
-            if "tahsildar" in departments and "sp" in departments and "forest" in departments:
-                self.log("✅ ADC can see ALL 3 department approvals")
-                self.passed += 1
-            else:
-                self.log(f"❌ ADC privacy FAILED: Only sees departments {departments}, expected all 3", "ERROR")
-                self.failed += 1
-        else:
-            self.log(f"❌ ADC file detail failed: {response.status_code} - {response.text}", "ERROR")
-            self.failed += 1
-        
-        # Step 17-18: Test DC can see all approvals
-        self.log("\n=== Step 17-18: Test DC can see all approvals ===")
-        dc_token = self.login_user("DC", "dc123")
-        if not dc_token:
-            self.failed += 1
-            return False
-            
-        response = self.make_request("GET", f"/files/{self.test_file_id}", dc_token)
-        if response.status_code == 200:
-            file_detail = response.json()
-            approvals = file_detail.get("approvals", [])
-            departments = {a["department"] for a in approvals}
-            
-            if "tahsildar" in departments and "sp" in departments and "forest" in departments:
-                self.log("✅ DC can see ALL 3 department approvals")
-                self.passed += 1
-            else:
-                self.log(f"❌ DC privacy FAILED: Only sees departments {departments}, expected all 3", "ERROR")
-                self.failed += 1
-        else:
-            self.log(f"❌ DC file detail failed: {response.status_code} - {response.text}", "ERROR")
-            self.failed += 1
-        
-        # Test audit log filtering for department users
-        self.log("\n=== Testing Audit Log Filtering ===")
-        
-        # First, let's make some approval decisions to generate audit logs
-        self.log("Making approval decisions to generate audit logs...")
-        
-        # SP approval
-        sp_approval_data = {"decision": "approve", "remark": "SP approves this file"}
-        response = self.make_request("POST", f"/files/{self.test_file_id}/approval", sp_token, sp_approval_data)
-        if response.status_code == 200:
-            self.log("✅ SP approval submitted")
-        else:
-            self.log(f"⚠️ SP approval failed: {response.status_code} - {response.text}")
-        
-        # Forest approval
-        forest_approval_data = {"decision": "reject", "remark": "Forest rejects this file"}
-        response = self.make_request("POST", f"/files/{self.test_file_id}/approval", forest_token, forest_approval_data)
-        if response.status_code == 200:
-            self.log("✅ Forest approval submitted")
-        else:
-            self.log(f"⚠️ Forest approval failed: {response.status_code} - {response.text}")
-        
-        # Now test audit log filtering for SP user
-        response = self.make_request("GET", f"/files/{self.test_file_id}", sp_token)
-        if response.status_code == 200:
-            file_detail = response.json()
-            audit_logs = file_detail.get("audit_log", [])
-            
-            # Check if SP can see forest approval decision in audit logs
-            forest_decision_logs = [log for log in audit_logs if "forest decision" in log.get("details", "").lower()]
-            
-            if len(forest_decision_logs) == 0:
-                self.log("✅ Audit log filtering: SP cannot see Forest approval decisions")
-                self.passed += 1
-            else:
-                self.log(f"❌ Audit log filtering FAILED: SP can see {len(forest_decision_logs)} Forest decision logs", "ERROR")
-                self.failed += 1
-        else:
-            self.log(f"❌ SP audit log test failed: {response.status_code} - {response.text}", "ERROR")
-            self.failed += 1
-        
-        return True
     
     def run_tests(self):
-        """Run all tests"""
+        """Run all login config tests"""
+        self.log("🚀 Starting Login Config Tests")
+        
         try:
-            self.test_department_privacy_workflow()
+            # Test 1: Public login config endpoint
+            self.test_public_login_config()
             
-            self.log(f"\n🎯 TEST SUMMARY:")
+            # Test 2-4: Admin config management
+            self.test_admin_config_update()
+            
+            # Test 5: Revert changes
+            self.test_revert_changes()
+            
+            # Summary
+            self.log(f"\n🎯 LOGIN CONFIG TEST SUMMARY:")
             self.log(f"✅ Passed: {self.passed}")
             self.log(f"❌ Failed: {self.failed}")
             self.log(f"📊 Success Rate: {(self.passed/(self.passed+self.failed)*100):.1f}%")
             
             if self.failed == 0:
-                self.log("🎉 ALL DEPARTMENT PRIVACY TESTS PASSED!")
+                self.log("🎉 ALL LOGIN CONFIG TESTS PASSED!")
                 return True
             else:
-                self.log("⚠️ Some tests failed - Department Privacy feature needs attention")
+                self.log("⚠️ Some tests failed - Login config functionality needs attention")
                 return False
                 
         except Exception as e:
@@ -365,6 +293,6 @@ class TestRunner:
             return False
 
 if __name__ == "__main__":
-    runner = TestRunner()
+    runner = LoginConfigTestRunner()
     success = runner.run_tests()
     sys.exit(0 if success else 1)

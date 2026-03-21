@@ -192,6 +192,30 @@ async def seed_default_users():
 
     logger.info("Seeded %d default users", len(default_users))
 
+# ==================== PUBLIC CONFIG (no auth) ====================
+
+@api_router.get("/public/login-config")
+async def get_login_config():
+    """Public endpoint to serve dynamic login page labels (no auth required)."""
+    config = await db.app_config.find_one({"key": "placeholders"}, {"_id": 0})
+    if not config:
+        return {
+            "role_labels": {
+                "case_worker": "Case Worker",
+                "admin": "System Admin",
+                "tahsildar": "Tahsildar",
+                "sp": "Superintendent of Police",
+                "forest_officer": "Forest Officer (DFO/DCF)",
+                "adc": "Asst. Commissioner (ADC)",
+                "dc": "Deputy Commissioner (DC)",
+            },
+            "tahsildar_locations": TAHSILDAR_LOCATIONS,
+        }
+    return {
+        "role_labels": config.get("role_labels", {}),
+        "tahsildar_locations": config.get("tahsildar_locations", TAHSILDAR_LOCATIONS),
+    }
+
 # ==================== AUTH ROUTES ====================
 
 @api_router.post("/auth/login")

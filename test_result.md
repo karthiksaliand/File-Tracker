@@ -251,15 +251,18 @@ backend:
 
   - task: "Admin Config Management (NEW)"
     implemented: true
-    working: false
+    working: true
     file: "/app/backend/server.py"
-    stuck_count: 1
+    stuck_count: 0
     priority: "medium"
     needs_retesting: false
     status_history:
       - working: false
         agent: "testing"
         comment: "❌ ADMIN CONFIG API FAILING - GET /api/admin/config returns 500 Internal Server Error due to MongoDB ObjectId serialization issue. Error: 'ObjectId' object is not iterable. Minor issue: functionality exists but needs _id field exclusion in projection to be JSON serializable."
+      - working: true
+        agent: "testing"
+        comment: "✅ ADMIN CONFIG API TESTS PASSED (10/10 - 100% SUCCESS RATE)! Comprehensive testing completed: 1) GET /api/public/login-config working perfectly (no auth required) - returns all expected roles (case_worker, admin, sp, forest_officer, adc, dc, tahsildar) and tahsildar_locations array with 9 locations, 2) Admin login successful, 3) GET /api/admin/config working correctly, 4) PUT /api/admin/config successfully updates role labels (tested SP label change from 'Superintendent of Police' to 'SP - Police Department'), 5) Public endpoint immediately reflects admin config changes, 6) Config changes can be reverted successfully. The previous MongoDB ObjectId serialization issue has been resolved - all admin config endpoints are fully functional."
 
   - task: "Analytics with NEW fields (high_priority, overdue)"
     implemented: true
@@ -371,7 +374,7 @@ test_plan:
   current_focus:
     []
   stuck_tasks:
-    - "Admin Config API - Minor serialization issue with MongoDB ObjectId"
+    []
   test_all: false
   test_priority: "high_first"
 
@@ -392,3 +395,5 @@ agent_communication:
     message: "NEW FEATURE: Department Privacy for Approvals. Please test: 1) Create a file as caseworker (login caseworker:case123, POST /api/files with departments=['tahsildar','sp','forest']), 2) Submit the file (POST /api/files/{id}/submit), 3) Login as SP (sp:sp123) and GET /api/files and GET /api/files/{id} - should ONLY see SP approval in approvals_summary/approvals, NOT tahsildar or forest, 4) Login as Forest (forest:forest123) and verify same - only forest approval visible, 5) Login as tah_mangaluru (tah_mangaluru:tah123) and verify - only tahsildar approval visible, 6) Login as admin/adc/dc and verify they CAN see ALL approvals. Also check audit_log in file detail - dept users should not see other dept approval decisions."
   - agent: "testing"
     message: "🎉 DEPARTMENT PRIVACY FEATURE TESTING COMPLETE (12/12 - 100% SUCCESS RATE)! Comprehensive testing of the new Department Privacy feature passed all scenarios: ✅ Created file PRIV001/2026 routed to all 3 departments ✅ SP user can ONLY see SP approval status (not tahsildar/forest) ✅ Forest user can ONLY see Forest approval status (not sp/tahsildar) ✅ Tahsildar user can ONLY see Tahsildar approval status (not sp/forest) ✅ Admin/ADC/DC can see ALL 3 department approvals as expected ✅ Audit log filtering working - department users cannot see other departments' approval decisions. Privacy isolation is working perfectly - department users are completely isolated from other departments' approval statuses. NOTE: Corrected usernames for testing - ADC and DC users have uppercase usernames ('ADC', 'DC') not lowercase."
+  - agent: "testing"
+    message: "✅ LOGIN CONFIG ENDPOINT TESTING COMPLETE (10/10 - 100% SUCCESS RATE)! Comprehensive testing of public login config and admin config management: 1) GET /api/public/login-config working perfectly (no auth required) - returns all expected roles (case_worker, admin, sp, forest_officer, adc, dc, tahsildar) and tahsildar_locations array with 9 locations, 2) Admin login successful, 3) GET /api/admin/config working correctly, 4) PUT /api/admin/config successfully updates role labels (tested SP label change), 5) Public endpoint immediately reflects admin config changes, 6) Config changes can be reverted successfully. RESOLVED: The previously stuck 'Admin Config API - Minor serialization issue with MongoDB ObjectId' has been fixed - all admin config endpoints are fully functional!"
