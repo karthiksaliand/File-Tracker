@@ -6,7 +6,7 @@ Quick verification of remaining core APIs
 import requests
 import json
 
-BASE_URL = "https://file-approval-hub-1.preview.emergentagent.com/api"
+BASE_URL = "https://dept-workflow-2.preview.emergentagent.com/api"
 
 def login_user(username, password):
     response = requests.post(f"{BASE_URL}/auth/login", json={"username": username, "password": password})

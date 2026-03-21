@@ -234,7 +234,9 @@ export default function FileDetailScreen() {
         {/* Approvals */}
         {file.approvals && file.approvals.length > 0 && (
           <View style={s.card}>
-            <Text style={s.cardTitle}>DEPARTMENT APPROVALS</Text>
+            <Text style={s.cardTitle}>
+              {(role === 'tahsildar' || role === 'sp' || role === 'forest_officer') ? 'YOUR APPROVAL STATUS' : 'DEPARTMENT APPROVALS'}
+            </Text>
             {file.approvals.map((a: any) => {
               const decColor = a.decision === 'approve' ? '#059669' : a.decision === 'reject' ? '#DC2626' : a.decision === 'na' ? '#94A3B8' : '#F59E0B';
               const decLabel = a.decision === 'approve' ? 'APPROVED' : a.decision === 'reject' ? 'REJECTED' : a.decision === 'na' ? 'N/A' : 'PENDING';

@@ -1,191 +1,149 @@
-<analysis>
+<analysis>**original_problem_statement**: The user is building a secure, role-based Government File Tracking Web Application. 
+PRODUCT REQUIREMENTS: 
+- Parallel departmental approvals (Tahsildar, SP, Forest), 30-day deadlines, automatic recurring reminders, and escalation.
+- User roles: Admin, Case Worker, Tahsildars, Forest Officer, SP, ADC, DC.
+- Recent feature additions: Role-specific dashboards, Case Worker department selection (routing files to specific departments instead of all), Priority flags (High Priority), custom department approval choices (Approve/Reject/NA), and deadline tracking.
+- Admin capabilities to rename users, update placeholders (Tahsildar locations, departments, role labels).
 
-**original_problem_statement**: The user wants to build a secure, role-based Government File Tracking Web Application.
+**User's preferred language**: INSTRUCT next agent to respond in **English** only.
 
-**PRODUCT REQUIREMENTS**:
-- **Objective**: A secure, role-based application for tracking government files.
-- **Key Features**: Parallel departmental approvals, 30-day deadline monitoring, automatic recurring reminders, an escalation mechanism for delays, strict edit controls, a full audit trail, and complete visibility for higher authorities (ADC, DC).
-- **User Roles**: Admin, Case Worker, 9 Tahsildar roles, Forest Officer, Superintendent of Police (SP), Assistant Commissioner (ADC), and Deputy Commissioner (DC).
-- **Core Workflow**:
-    1.  **Case Worker**: Creates a file with applicant details, a description, document uploads, and assigns it to a specific Tahsildar. The file is then sent simultaneously to the selected Tahsildar, Forest Dept, and SP Dept, starting a 30-day timer.
-    2.  **Parallel Approval**: Tahsildar, SP, and Forest departments must approve/reject the file within 30 days. Their decisions are locked after submission.
-    3.  **Reminders**: The system should send automatic notifications every 2 days to departments that haven't acted.
-    4.  **Escalation**: If the 30-day deadline is missed, the file is marked Delayed, and an escalation notice is sent to Admin, ADC, and DC.
-    5.  **Visibility**: ADC and DC have read-only access to all files and their statuses. The DC holds the final decision authority (Accept/Reject).
-    6.  **Admin Authority**: The Admin has full control to view, edit, delete, override, and reassign any file. They also manage user credentials and view analytics and audit logs.
-
-**User's preferred language**: English
-
-**what currently exists?**
-A full-stack application has been developed using a FastAPI backend and a React Native (Expo) frontend. The application includes:
-- A complete set of user roles with JWT-based authentication.
-- A functional workflow for file creation, parallel approvals, and final decisions.
-- An admin panel with capabilities to edit and delete files, and manage users.
-- A basic UI for all user roles, including dashboards, file lists, and detail views.
-- The system was tested and most deployment blockers were resolved.
+**what currently exists?** 
+A full-stack application (Expo frontend + FastAPI/MongoDB backend) with complete Role-Based Access Control (RBAC). The application handles file creation, selective departmental routing, priority flags, parallel approvals, and ADC/DC final decisions. The backend uses direct  for password hashing. A custom robust inline logout system has been implemented for web compatibility. The Admin panel has been recently rewritten to support user renaming and dynamic placeholder configuration.
 
 **Last working item**:
-    - Last item agent was working: The agent was addressing a user request to modify the file creation form and fix a logout error.
-        - **Task**: Change the Case Worker's file creation form fields from Applicant Details to File No:, Year:, and Description. This requires changes to the backend model, frontend form, and file display components.
-        - **Bug**: The user reported an error when clicking the logout button. The agent was investigating the console logs to debug this.
-    - Status: IN PROGRESS
-    - Agent Testing Done: N
-    - Which testing method agent to use? both
+    - Last item agent was working: The agent rewrote  to add UI for the Admin to rename users (Display Name, Username, Passwords) and dynamically edit placeholders (Tahsildar locations, Department names, Role labels). The agent verified the screen visually via screenshot.
+    - Status: USER VERIFICATION PENDING
+    - Agent Testing Done: Y (Visual screenshot only. Functional testing pending)
+    - Which testing method agent to use? Both (Frontend and Backend testing agent to verify the new Admin renaming APIs and UI state changes).
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-  - Issue 1: Logout functionality is broken (P0).
-  - Issue 2: File search functionality needs to be updated to work with the new  field (P1).
+  Issue 1: Implement Phone Push Notifications (P0)
+  Issue 2: Verify Admin User/Placeholder Renaming functionality (P1)
 
   Issues Detail:
   - Issue 1: 
-     - Attempted fixes: The agent has viewed the application logs ( and ) to understand the cause but has not yet implemented a fix. The  function in  needs to be called correctly from the dashboard.
-     - Next debug checklist:
-       1. Modify  to ensure the  function from  is called correctly on button press.
-       2. Verify that  is successfully executed.
-       3. Ensure the router navigates the user back to the login screen () after logout.
-     - Why fix this issue and what will be achieved with the fix? A broken logout is a critical usability and security flaw. Fixing it will allow users to securely end their sessions.
-     - Status:  IN PROGRESS
-     - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? Frontend
-     - Blocked on other issue: None
-
-  - Issue 2: 
-     - Attempted fixes: None. This is a consequence of the new feature request.
-     - Next debug checklist:
-       1. Update the search input and logic in  to filter files based on .
-       2. Ensure the backend endpoint for searching/filtering files supports querying by .
-     - Why fix this issue and what will be achieved with the fix? To align the application's functionality with the user's new requirement for file identification and retrieval.
-     - Status:  NOT STARTED
+     - Attempted fixes: None. The user explicitly requested this should get a phone notification implementation in a previous message, but the agent pivoted to fixing the critical logout bug and building the Admin renaming UI first.
+     - Next debug checklist: 
+       1. Set up  in the frontend.
+       2. Update  to store Expo push tokens in the  collection.
+       3. Modify backend notification logic to trigger Expo Push API alongside in-app notifications.
+     - Why fix this issue and what will be achieved with the fix? Fulfills user's explicit request for native phone alerts for file approvals/delays.
+     - Status: NOT STARTED
      - Is recurring issue? N
      - Should Test frontend/backend/both after fix? Both
-     - Blocked on other issue: Blocked on Task 1: Refactor file creation model.
+     - Blocked on other issue: None
+  - Issue 2: 
+     - Attempted fixes: UI created in . Need to ensure  and  properly save and propagate renamed placeholders throughout the app.
+     - Next debug checklist: Check if modifying a placeholder in the Admin UI correctly updates  in DB and reflects on the  and dashboard screens.
+     - Why fix this issue and what will be achieved with the fix? Ensures the newly added Admin renaming feature works end-to-end.
+     - Status: TESTING PENDING
+     - Is recurring issue? N
+     - Should Test frontend/backend/both after fix? Both
+     - Blocked on other issue: None
 
 **In progress Task List**:
-  - Task 1: Refactor file creation model and UI (P0)
+  Task 1: Phone Notifications Integration (P0)
 
  Task Detail:
   - Task 1: 
-     - Where to resume: The agent has already viewed the necessary files (, , , ). The next step is to use  or  to apply the changes in parallel.
-        - **Backend**: In , update the  Pydantic model and the corresponding database logic to replace  with  and . The  field already exists.
-        - **Frontend**:
-          - In , change the form inputs to File No, Year, and Description.
-          - In , update the display to show the new fields.
-     - What will be achieved with this? The application will align with the user's specific requirements for how files are created and identified.
-     - Status:  IN PROGRESS
+     - Where to resume: Start by analyzing current notification logic in  and adding Expo Push Notification logic.
+     - What will be achieved with this? Mobile-native push alerts.
+     - Status: NOT STARTED
      - Should Test frontend/backend/both after fix? Both
      - Blocked on something: None
 
 **Upcoming and Future Tasks**
 Upcoming Tasks:
-- **P1: Implement Automatic Reminders**: The  file has a placeholder for a notification system, but the logic for sending reminders every 2 days for pending approvals needs to be fully implemented and tested. This might require a background job or a check on user login/dashboard load.
-- **P2: Enhance Admin Analytics Dashboard**: The UI for the admin dashboard exists in , but the backend needs corresponding aggregation endpoints in  to provide the required stats: Total files, Pending, Approved, Rejected, Delayed, and Department-wise pending counts.
+- P0: Expo Push Notifications integration.
+- P1: Implement Automatic 2-day Reminders (Currently, a background task placeholder exists, but needs full implementation to check deadlines and send notifications).
+- P2: Verify Edge Cases for dynamic placeholders (Ensuring renamed Tahsildar locations don't break historical file queries).
 
 Future Tasks:
-- **Email/SMS Integration**: The user mentioned this as an optional enhancement for the reminder system.
+- Optional: Email/SMS integration for reminders.
 
 **Completed work in this session**
-- **Full-Stack Application Scaffolding**: Created a FastAPI backend and an Expo frontend.
-- **Role-Based Access Control (RBAC)**: Implemented JWT authentication and authorization for all 15 specified user roles.
-- **Core File Workflow**: Built the end-to-end logic for file creation, parallel departmental approvals, and final decision-making by the DC.
-- **Admin Superpowers**: Implemented full CRUD capabilities for the Admin role, allowing them to edit, delete, and override any file.
-- **Deployment Readiness**: Resolved several critical issues, including:
-    - A redirect loop on Android by replacing  with the  component in  and .
-    - Missing  in .
-    - Database query performance by adding indexes in .
-- **UI/UX Refinements**:
-    - Restructured the frontend directory to resolve Metro bundler issues.
-    - Upgraded  for Expo SDK 54 compatibility.
+- File schema refactored to , ,  instead of applicant details (DONE)
+- Deployment blocker fixed: Replaced  with direct  in backend (DONE)
+- Role-specific dashboards with Priority flags and Deadline tracking (DONE)
+- Case Worker ability to select specific departments for approval routing (DONE)
+- ADC & DC specific approval/decision workflows (DONE)
+- Fixed Web Logout bug: Replaced Modal-based approach with an inline banner and  redirect (DONE)
+- Admin User and Config/Placeholder Management UI (DONE)
 
 **Earlier issues found/mentioned but not fixed**
-None. All previously identified issues (bundling errors, env var issues, redirect loops) were addressed. The current pending issues are from the most recent user request.
+None explicitly found, but Expo web tunneling (ngrok) was highly unstable during the session.
 
 **Known issue recurrence from previous fork**
-- Issue recurrence in previous fork: None
-- Recurrence count: 0
-- Status: NA
+  - Issue recurrence in previous fork: Web Logout Failure
+  - Recurrence count: 3
+  - Status: RESOLVED
+  Note: React Native Web  and / event listeners caused freezing on logout. This was permanently fixed by utilizing an inline UI banner and a hard  redirect. Do not revert to  for logout.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- **Backend**: FastAPI, Python, MongoDB (via  for async access).
-- **Frontend**: React Native, Expo, Expo Router (file-based routing).
-- **Authentication**: JWT (JSON Web Tokens) with role-based access control.
-- **Styling**: React Native  (no CSS).
-- **State Management**: React Context API ().
+- Backend: FastAPI, Python, MongoDB (Motor async), direct 
+- Frontend: React Native (Expo Web/Mobile), Expo Router, Context API
+- Auth: JWT with RBAC (Role-Based Access Control)
 
 **key DB schema**
-- **users**: 
-- **files**: 
+  - users: 
+  - files: 
+  - app_config: 
+  - approvals: 
 
 **changes in tech stack**
-None.
+  - Removed  due to  attribute deprecation/deployment errors. Added direct  library implementation in .
 
 **All files of reference**
-- : Contains all backend logic, API endpoints, and database models. (Updated for admin controls and query optimization).
-- : The main entry point, handles login and auth redirection. (Updated to fix redirect loop).
-- : Root layout, manages authentication state. (Updated to fix redirect loop).
-- : Defines the tab bar navigation for authenticated users.
-- : Form for file creation. (To be modified).
-- : Displays details of a single file and actions. (Updated for admin controls, to be modified for new fields).
-- : Main screen for users, lists files. (To be modified for logout fix and new search).
-- : Admin panel for user management and analytics.
-- : Provides authentication state and functions (, ) to the app. (To be checked for logout bug).
+  -  (Rewritten to support priority, config API, selective routing, direct bcrypt)
+  -  (Rewritten to support renaming users and config/placeholders)
+  -  (Updated for hard-refresh logout)
+  -  (Created to replace  on web)
 
-**Areas that need refactoring**:
-- The  file inside  appears to be unused or deprecated, as the primary auth logic resides in  and . It could be removed for cleanup.
+**Areas that need refactoring**: 
+  -  was created to fix  issues on web but was subsequently removed from the Logout flow because Modals were still trapping touch events. Verify if  usage in  and  behaves correctly or if they also need inline confirmations.
 
 **key api endpoints**
-- : User authentication.
-- : Get current user's details.
-- : Get a list of files based on user role.
-- : Create a new file (Case Worker).
-- : Get details of a specific file.
-- : Submit an approval (Tahsildar, SP, Forest).
-- : Add a remark (ADC).
-- : Make a final decision (DC).
-- : Admin endpoint to edit any file property.
-- : Admin endpoint to delete a file.
-- , , : Admin user management endpoints.
+  -  (Newly added for audit logging)
+  -  (Newly added for dynamic placeholders)
+  -  (Newly added for renaming users/passwords)
 
-**Critical Info for New Agent**
-- The project underwent a file structure change early on. All shared frontend code (context, constants) was moved from a  directory to the  root to fix a Metro bundler resolution issue. Be mindful of import paths.
-- The agent is in the middle of a refactor requested by the user. You must complete the changes to the file creation model (, ) and fix the logout bug.
-- Testing has been performed, but a new round of testing (frontend and backend) will be required after the current set of changes is implemented.
+**Critical Info for New Agent** 
+- **DO NOT** use  for logging out. Keep the  inside  because Expo Router heavily caches state on the web, causing ghost UI states.
+- The  migration forced a DB re-seed. Default users still exist (e.g., ,  password: ).
+- When fetching  from MongoDB, be aware that  mutates the dictionary by adding . Strip  before returning it to the frontend via API to avoid serialization errors. This was fixed but keep it in mind.
 
-**documents created in this job**
-- 
+**documents and test reports created in this job**
+  - 
 
-**Last 10 User Messages and any pending HUMAN messages**
-1.  **User**: Asks to change the file creation form for Case Workers to use File No:, Year:, and descriptions. (IN PROGRESS)
-2.  **User**: Asks to fix a logout error. (IN PROGRESS)
-3.  **User**: Asks to make the file search work with the new File No. (PENDING, dependent on task 1)
-4.  **User**: Asks how to make changes to the app after deployment.
-5.  **Agent**: Explains the post-deployment workflow: make changes in the chat, preview, and then redeploy.
-6.  **User**: Asks to call the deployer agent.
-7.  **Agent**: Ran health checks, found and fixed multiple deployment blockers (env vars, redirect loops, DB queries).
-8.  **User**: Asks the agent to add full modification and deletion rights for the admin.
-9.  **Agent**: Implemented and tested backend endpoints (, ) and updated the frontend UI () to include these admin controls.
-10. **User**: Provides initial feedback on the design and login requirements.
+**Last 10 User Messages and any pending HUMAN messages** 
+ 1. User: Asked for Deployment Agent help due to build errors. (DONE)
+ 2. User: Provide renaming ability to admin for all users and placeholders. (DONE - UI built)
+ 3. User: Approved agent's plan.
+ 4. User: Requested major feature rewrite: Role-specific dashboards, selective department routing, approve/reject/NA, high priority flags, separate logins on splash, deadline visibility. (DONE)
+ 5. User: You can group the tahsildars. Good to go (DONE)
+ 6. User: this should get a phone notification implementation. logout still does not work. Correct this and test for the logout (LOGOUT DONE, NOTIFICATIONS PENDING)
+ 7. User: Specified exact renaming requirements for Admin (Display Name, Username, Reset Password, Placeholders). (DONE - UI built)
+ 8. User: continue (Acknowledged)
 
 **Project Health Check:**
-- **Broken**: Logout functionality. File creation is in a transitional state.
-- **Mocked**: None.
+- Mocked: None
+- Broken: Nothing currently explicitly broken, but Expo web tunneling (ngrok) was unstable.
 
-**3rd Party Integrations**
-None.
+**3rd Party Integrations** 
+None currently active. (Expo Push Notifications requested next).
 
 **Testing status**
-- Testing agent used after significant changes: YES
-- Troubleshoot agent used after agent stuck in loop: NO
-- Test files created: None.
-- Known regressions: The logout functionality, which was likely working before, is now broken. This was reported in the last user message.
+  - Testing agent used after significant changes: YES
+  - Troubleshoot agent used after agent stuck in loop: YES
+  - Test files created: None
+  - Known regressions: None
 
 **Credentials to test flow:**
-Default users for all roles are seeded in . The password for all default users is . Example users: , , , , , , .
+Default users seeded on backend restart. Use username , , , , , ,  with password .
 
 **What agent forgot to execute**
-The agent did not forget but was interrupted mid-task. It needs to complete the implementation of the file creation refactor and fix the logout bug. The plan to do this in parallel was sound, but the execution was not started.
-
-</analysis>
+The agent completely missed starting the **Phone Notification implementation** (Expo Push Notifications) requested by the user in message #275. This must be the primary focus of the next session.</analysis>

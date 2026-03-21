@@ -285,6 +285,21 @@ backend:
         agent: "testing"
         comment: "✅ LOGOUT ENDPOINT TESTS PASSED (5/5) - POST /api/auth/logout working perfectly. Authenticated logout returns 'Logged out successfully' message (200 status). Unauthorized requests correctly rejected with 401. Audit logging functional - logout actions properly recorded with user details and timestamps. All 7 user roles login verification successful (minor: forest role shows as 'forest_officer' in DB, not 'forest')."
 
+  - task: "Department Privacy - Approvals Isolation"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW FEATURE: Department-level approval privacy. Tahsildar/SP/Forest users can only see their OWN approval status on files, not other departments' statuses. Admin/ADC/DC/CaseWorker can see all. Changes in: 1) GET /api/files - approvals_summary filtered by dept, 2) GET /api/files/{file_id} - approvals list filtered by dept, audit_log filtered to hide other dept decisions. Frontend file-detail.tsx updated section title to 'YOUR APPROVAL STATUS' for dept users."
+      - working: true
+        agent: "testing"
+        comment: "✅ DEPARTMENT PRIVACY FEATURE TESTS PASSED (12/12 - 100% SUCCESS RATE)! Comprehensive testing completed: 1) Created file PRIV001/2026 routed to all 3 departments (tahsildar, sp, forest), 2) SP user can ONLY see SP approval in both file list and detail views, 3) Forest user can ONLY see Forest approval in both views, 4) Tahsildar user can ONLY see Tahsildar approval in both views, 5) Admin/ADC/DC can see ALL 3 department approvals as expected, 6) Audit log filtering working - SP cannot see Forest approval decisions in audit logs. Privacy isolation is working perfectly - department users are completely isolated from other departments' approval statuses."
+
 frontend:
   - task: "File Creation Form (file_no, year, description)"
     implemented: true
@@ -354,7 +369,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "LOGOUT ENDPOINT TESTING COMPLETED - All requested test scenarios passed successfully"
+    []
   stuck_tasks:
     - "Admin Config API - Minor serialization issue with MongoDB ObjectId"
   test_all: false
@@ -373,3 +388,7 @@ agent_communication:
     message: "🚀 NEW FEATURES TESTING COMPLETE (9/10 - 90% SUCCESS RATE)! ✅ ALL 7 USER ROLES authenticated successfully ✅ File creation with departments+priority working perfectly ✅ NEW approve/reject/na decision format working ✅ NEW ADC decision endpoint functional ✅ Admin user edit working ✅ Analytics with high_priority+overdue fields working ✅ Full priority workflow tested successfully ❌ MINOR: Admin config API has ObjectId serialization issue (500 error) - needs _id field exclusion. Core file tracking workflow is 100% functional!"
   - agent: "testing"
     message: "✅ LOGOUT ENDPOINT TESTING COMPLETE (11/12 - 92% SUCCESS)! Quick test verification passed all requested scenarios: 1) Caseworker login ✅ 2) Authenticated logout returns 'Logged out successfully' ✅ 3) Audit log verification shows logout action recorded ✅ 4) Unauthorized logout correctly returns 401 ✅ 5) All 7 user roles login verification ✅ (Minor: forest role stored as 'forest_officer' in DB). Backend logout functionality fully operational with proper audit logging!"
+  - agent: "main"
+    message: "NEW FEATURE: Department Privacy for Approvals. Please test: 1) Create a file as caseworker (login caseworker:case123, POST /api/files with departments=['tahsildar','sp','forest']), 2) Submit the file (POST /api/files/{id}/submit), 3) Login as SP (sp:sp123) and GET /api/files and GET /api/files/{id} - should ONLY see SP approval in approvals_summary/approvals, NOT tahsildar or forest, 4) Login as Forest (forest:forest123) and verify same - only forest approval visible, 5) Login as tah_mangaluru (tah_mangaluru:tah123) and verify - only tahsildar approval visible, 6) Login as admin/adc/dc and verify they CAN see ALL approvals. Also check audit_log in file detail - dept users should not see other dept approval decisions."
+  - agent: "testing"
+    message: "🎉 DEPARTMENT PRIVACY FEATURE TESTING COMPLETE (12/12 - 100% SUCCESS RATE)! Comprehensive testing of the new Department Privacy feature passed all scenarios: ✅ Created file PRIV001/2026 routed to all 3 departments ✅ SP user can ONLY see SP approval status (not tahsildar/forest) ✅ Forest user can ONLY see Forest approval status (not sp/tahsildar) ✅ Tahsildar user can ONLY see Tahsildar approval status (not sp/forest) ✅ Admin/ADC/DC can see ALL 3 department approvals as expected ✅ Audit log filtering working - department users cannot see other departments' approval decisions. Privacy isolation is working perfectly - department users are completely isolated from other departments' approval statuses. NOTE: Corrected usernames for testing - ADC and DC users have uppercase usernames ('ADC', 'DC') not lowercase."

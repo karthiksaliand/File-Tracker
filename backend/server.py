@@ -334,13 +334,31 @@ async def list_files(user=Depends(get_current_user), status: Optional[str] = Non
                 approvals_by_file[appr["file_id"]] = []
             approvals_by_file[appr["file_id"]].append(appr)
 
+    # Determine which department the user belongs to (for privacy filtering)
+    dept_filter = None
+    if role == "tahsildar":
+        dept_filter = "tahsildar"
+    elif role == "sp":
+        dept_filter = "sp"
+    elif role == "forest_officer":
+        dept_filter = "forest"
+
     for f in files:
         if f.get("status") != "draft":
             file_approvals = approvals_by_file.get(f["id"], [])
-            f["approvals_summary"] = {
-                a["department"]: {"decision": a["decision"], "department_detail": a.get("department_detail", "")}
-                for a in file_approvals
-            }
+            if dept_filter:
+                # Department users only see their own approval status
+                f["approvals_summary"] = {
+                    a["department"]: {"decision": a["decision"], "department_detail": a.get("department_detail", "")}
+                    for a in file_approvals
+                    if a["department"] == dept_filter
+                }
+            else:
+                # Admin, ADC, DC, Case Worker see all
+                f["approvals_summary"] = {
+                    a["department"]: {"decision": a["decision"], "department_detail": a.get("department_detail", "")}
+                    for a in file_approvals
+                }
         else:
             f["approvals_summary"] = {}
 
@@ -353,10 +371,42 @@ async def get_file(file_id: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="File not found")
 
     approvals = await db.approvals.find({"file_id": file_id}, {"_id": 0}).to_list(10)
+
+    # Department privacy: departments only see their own approval
+    role = user["role"]
+    dept_filter = None
+    if role == "tahsildar":
+        dept_filter = "tahsildar"
+    elif role == "sp":
+        dept_filter = "sp"
+    elif role == "forest_officer":
+        dept_filter = "forest"
+
+    if dept_filter:
+        approvals = [a for a in approvals if a["department"] == dept_filter]
+
     file_doc["approvals"] = approvals
 
     audits = await db.audit_logs.find({"file_id": file_id}, {"_id": 0}).sort("timestamp", -1).to_list(100)
-    file_doc["audit_log"] = audits
+
+    # Filter audit logs for department users - hide other departments' approval decisions
+    if dept_filter:
+        other_depts = [d for d in ["tahsildar", "sp", "forest"] if d != dept_filter]
+        filtered_audits = []
+        for audit in audits:
+            # Hide audit entries about other department approvals
+            is_other_dept_action = False
+            if audit.get("action") == "submit_approval":
+                details = audit.get("details", "")
+                for od in other_depts:
+                    if details.startswith(f"{od} decision"):
+                        is_other_dept_action = True
+                        break
+            if not is_other_dept_action:
+                filtered_audits.append(audit)
+        file_doc["audit_log"] = filtered_audits
+    else:
+        file_doc["audit_log"] = audits
 
     return file_doc
 

@@ -6,7 +6,7 @@ import sys
 from datetime import datetime
 
 # Backend URL from frontend/.env
-BACKEND_URL = "https://file-approval-hub-1.preview.emergentagent.com/api"
+BACKEND_URL = "https://dept-workflow-2.preview.emergentagent.com/api"
 
 def debug_login():
     """Debug the login response to see what's being returned"""
