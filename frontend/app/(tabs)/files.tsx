@@ -4,7 +4,7 @@ import {
   TextInput, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { fetchAPI } from '../../constants/api';
@@ -13,9 +13,11 @@ import { Colors, Spacing, Radius, StatusColors, StatusLabels } from '../../const
 export default function FilesScreen() {
   const { user } = useAuth();
   const router = useRouter();
+  const params = useLocalSearchParams<{ initialFilter?: string; initialPriority?: string }>();
   const [files, setFiles] = useState<any[]>([]);
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState(params.initialFilter || 'all');
+  const [priorityFilter, setPriorityFilter] = useState(params.initialPriority || 'all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -24,13 +26,21 @@ export default function FilesScreen() {
       let url = '/files?limit=100';
       if (search) url += `&search=${encodeURIComponent(search)}`;
       if (filter !== 'all') url += `&status=${filter}`;
+      if (priorityFilter !== 'all') url += `&priority=${priorityFilter}`;
       const data = await fetchAPI(url);
       setFiles(data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); setRefreshing(false); }
-  }, [search, filter]);
+  }, [search, filter, priorityFilter]);
 
   useFocusEffect(useCallback(() => {
+    // Apply initial params on focus
+    if (params.initialFilter && params.initialFilter !== filter) {
+      setFilter(params.initialFilter);
+    }
+    if (params.initialPriority && params.initialPriority !== priorityFilter) {
+      setPriorityFilter(params.initialPriority);
+    }
     setLoading(true);
     loadFiles();
   }, [loadFiles]));

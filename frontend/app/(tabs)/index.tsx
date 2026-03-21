@@ -69,6 +69,13 @@ export default function Dashboard() {
     return diff;
   };
 
+  const navigateToFiles = (filterStatus?: string, filterPriority?: string) => {
+    const params: any = {};
+    if (filterStatus) params.initialFilter = filterStatus;
+    if (filterPriority) params.initialPriority = filterPriority;
+    router.push({ pathname: '/(tabs)/files', params });
+  };
+
   if (loading) {
     return <SafeAreaView style={s.container}><View style={s.center}><ActivityIndicator size="large" color={Colors.primary} /></View></SafeAreaView>;
   }
@@ -107,21 +114,46 @@ export default function Dashboard() {
           {/* Stats Cards */}
           {analytics && (role === 'admin' || role === 'case_worker' || role === 'adc' || role === 'dc') && (
             <View style={s.statsGrid}>
-              <StatCard label="Total" value={analytics.total} color="#2563EB" icon="file-multiple" />
-              <StatCard label="Submitted" value={analytics.submitted} color="#F59E0B" icon="clock-outline" />
-              <StatCard label="Approved" value={analytics.approved} color="#059669" icon="check-circle" />
-              <StatCard label="Rejected" value={analytics.rejected} color="#DC2626" icon="close-circle" />
-              {analytics.high_priority > 0 && <StatCard label="High Priority" value={analytics.high_priority} color="#DC2626" icon="alert-circle" />}
-              {analytics.overdue > 0 && <StatCard label="Overdue" value={analytics.overdue} color="#DC2626" icon="clock-alert" />}
+              <StatCard label="Total" value={analytics.total} color="#2563EB" icon="file-multiple" onPress={() => navigateToFiles()} />
+              <StatCard label="Submitted" value={analytics.submitted} color="#F59E0B" icon="clock-outline" onPress={() => navigateToFiles('submitted')} />
+              <StatCard label="Approved" value={analytics.approved} color="#059669" icon="check-circle" onPress={() => navigateToFiles('dc_approved')} />
+              <StatCard label="Rejected" value={analytics.rejected} color="#DC2626" icon="close-circle" onPress={() => navigateToFiles('dc_rejected')} />
+              {analytics.high_priority > 0 && <StatCard label="High Priority" value={analytics.high_priority} color="#DC2626" icon="alert-circle" onPress={() => navigateToFiles(undefined, 'high')} />}
+              {analytics.overdue > 0 && <StatCard label="Overdue" value={analytics.overdue} color="#DC2626" icon="clock-alert" onPress={() => navigateToFiles('delayed')} />}
             </View>
           )}
 
           {/* Department-specific stats */}
           {(role === 'tahsildar' || role === 'sp' || role === 'forest_officer') && analytics && (
             <View style={s.statsGrid}>
-              <StatCard label="My Pending" value={pendingFiles.length} color="#F59E0B" icon="clock-outline" />
-              <StatCard label="Total Files" value={recentFiles.length} color="#2563EB" icon="file-multiple" />
-              {overdueFiles.length > 0 && <StatCard label="Overdue" value={overdueFiles.length} color="#DC2626" icon="clock-alert" />}
+              <StatCard label="My Pending" value={pendingFiles.length} color="#F59E0B" icon="clock-outline" onPress={() => navigateToFiles('submitted')} />
+              <StatCard label="Total Files" value={recentFiles.length} color="#2563EB" icon="file-multiple" onPress={() => navigateToFiles()} />
+              {overdueFiles.length > 0 && <StatCard label="Overdue" value={overdueFiles.length} color="#DC2626" icon="clock-alert" onPress={() => navigateToFiles('delayed')} />}
+            </View>
+          )}
+
+          {/* Department Pending - Moved up, right after stats */}
+          {(role === 'admin' || role === 'adc' || role === 'dc') && analytics?.department_pending && (
+            <View style={s.deptPendingCard}>
+              <Text style={s.sectionTitle}>DEPARTMENT PENDING</Text>
+              {Object.entries(analytics.department_pending).map(([dept, count]) => (
+                <TouchableOpacity key={dept} style={s.deptRow} onPress={() => navigateToFiles('submitted')} activeOpacity={0.7}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <MaterialCommunityIcons
+                      name={dept === 'tahsildar' ? 'map-marker' : dept === 'sp' ? 'shield-star' : 'pine-tree'}
+                      size={18}
+                      color={dept === 'tahsildar' ? '#F59E0B' : dept === 'sp' ? '#0891B2' : '#059669'}
+                    />
+                    <Text style={s.deptLabel}>{dept.charAt(0).toUpperCase() + dept.slice(1)}</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <View style={[s.deptBadge, { backgroundColor: (count as number) > 0 ? '#FEF3C7' : '#D1FAE5' }]}>
+                      <Text style={[s.deptCount, { color: (count as number) > 0 ? '#92400E' : '#065F46' }]}>{count as number}</Text>
+                    </View>
+                    <MaterialCommunityIcons name="chevron-right" size={16} color={Colors.mutedForeground} />
+                  </View>
+                </TouchableOpacity>
+              ))}
             </View>
           )}
 
@@ -175,34 +207,20 @@ export default function Dashboard() {
               recentFiles.slice(0, 8).map(f => <FileCard key={f.id} file={f} role={role} getDaysLeft={getDaysLeft} onPress={() => router.push({ pathname: '/file-detail', params: { id: f.id } })} />)
             )}
           </View>
-
-          {/* Admin: Dept Pending */}
-          {(role === 'admin' || role === 'adc' || role === 'dc') && analytics?.department_pending && (
-            <View style={s.section}>
-              <Text style={s.sectionTitle}>DEPARTMENT PENDING</Text>
-              {Object.entries(analytics.department_pending).map(([dept, count]) => (
-                <View key={dept} style={s.deptRow}>
-                  <Text style={s.deptLabel}>{dept.charAt(0).toUpperCase() + dept.slice(1)}</Text>
-                  <View style={[s.deptBadge, { backgroundColor: (count as number) > 0 ? '#FEF3C7' : '#D1FAE5' }]}>
-                    <Text style={[s.deptCount, { color: (count as number) > 0 ? '#92400E' : '#065F46' }]}>{count as number}</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function StatCard({ label, value, color, icon }: { label: string; value: number; color: string; icon: string }) {
+function StatCard({ label, value, color, icon, onPress }: { label: string; value: number; color: string; icon: string; onPress?: () => void }) {
   return (
-    <View style={[sc.card, { borderLeftColor: color }]}>
+    <TouchableOpacity style={[sc.card, { borderLeftColor: color }]} onPress={onPress} activeOpacity={onPress ? 0.7 : 1}>
       <MaterialCommunityIcons name={icon as any} size={18} color={color} />
       <Text style={[sc.value, { color }]}>{value}</Text>
       <Text style={sc.label}>{label}</Text>
-    </View>
+      {onPress && <MaterialCommunityIcons name="chevron-right" size={14} color={Colors.mutedForeground} style={{ position: 'absolute', top: 8, right: 8 }} />}
+    </TouchableOpacity>
   );
 }
 
@@ -284,7 +302,8 @@ const s = StyleSheet.create({
   badge: { position: 'absolute', top: 2, right: 2, backgroundColor: '#DC2626', borderRadius: 8, minWidth: 16, height: 16, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 3 },
   badgeText: { fontSize: 9, fontWeight: '800', color: '#FFF' },
   content: { paddingHorizontal: Spacing.md, paddingBottom: 40 },
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  deptPendingCard: { backgroundColor: Colors.card, borderRadius: Radius.sm, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: Colors.border },
   createBtn: {
     backgroundColor: Colors.primary, borderRadius: Radius.md, height: 48,
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginBottom: 16,
