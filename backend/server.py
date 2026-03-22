@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 import bcrypt
 from jose import jwt, JWTError
+import httpx
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -551,6 +552,35 @@ async def submit_file(file_id: str, user=Depends(get_current_user)):
 
     await log_audit(user["id"], user["display_name"], user["role"], "submit_file", file_id, file_doc["file_number"], f"File submitted to depts: {', '.join(selected_depts)}")
 
+    # Send push notifications to assigned departments
+    file_number = file_doc["file_number"]
+    push_data = {"file_id": file_id, "type": "new_file"}
+
+    if "tahsildar" in selected_depts:
+        await send_push_to_roles(
+            ["tahsildar"], "📄 New File Assigned",
+            f"File {file_number} requires your review.",
+            push_data, target_department=file_doc["tahsildar_location"]
+        )
+    if "sp" in selected_depts:
+        await send_push_to_roles(
+            ["sp"], "📄 New File for Review",
+            f"File {file_number} requires SP review.",
+            push_data
+        )
+    if "forest" in selected_depts:
+        await send_push_to_roles(
+            ["forest_officer"], "📄 New File for Review",
+            f"File {file_number} requires Forest review.",
+            push_data
+        )
+    # Always notify ADC
+    await send_push_to_roles(
+        ["adc"], "📄 New File Submitted",
+        f"File {file_number} has been submitted for departmental review.",
+        push_data
+    )
+
     updated = await db.files.find_one({"id": file_id}, {"_id": 0})
     return updated
 
@@ -601,6 +631,19 @@ async def submit_approval(file_id: str, req: ApprovalRequest, user=Depends(get_c
             "message": f"All reviews complete for {file_doc['file_number']}. Awaiting your decision.",
             "is_read": False, "created_at": now,
         })
+        # Push notify DC when all departments have responded
+        await send_push_to_roles(
+            ["dc"], "✅ All Reviews Complete",
+            f"File {file_doc['file_number']} - all departments have responded. Your decision is needed.",
+            {"file_id": file_id, "type": "all_approvals_complete"}
+        )
+
+    # Push notify ADC about the new department approval
+    await send_push_to_roles(
+        ["adc"], f"📋 {dept.upper()} Decision: {req.decision.upper()}",
+        f"File {file_doc['file_number']} - {dept} has submitted their decision.",
+        {"file_id": file_id, "type": "approval_submitted"}
+    )
 
     return {"message": "Approval submitted successfully"}
 
@@ -721,6 +764,85 @@ async def mark_all_read(user=Depends(get_current_user)):
     q = build_notif_query(user["role"], user["department"])
     await db.notifications.update_many(q, {"$set": {"is_read": True}})
     return {"message": "All marked as read"}
+
+# ==================== PUSH NOTIFICATIONS ====================
+
+class PushTokenRequest(BaseModel):
+    token: str
+
+@api_router.post("/notifications/push-token")
+async def register_push_token(req: PushTokenRequest, user=Depends(get_current_user)):
+    """Register an Expo Push Token for a user's device."""
+    token = req.token
+    if not token or not token.startswith("ExponentPushToken["):
+        raise HTTPException(status_code=400, detail="Invalid Expo push token")
+
+    # Upsert: one token per user (replace if already exists)
+    await db.push_tokens.update_one(
+        {"user_id": user["id"]},
+        {"$set": {
+            "user_id": user["id"],
+            "token": token,
+            "role": user["role"],
+            "department": user.get("department", ""),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True
+    )
+    logger.info(f"Push token registered for user {user['display_name']} ({user['role']})")
+    return {"message": "Push token registered"}
+
+
+async def send_push_notifications(tokens: list, title: str, body: str, data: dict = None):
+    """Send push notifications via Expo Push API."""
+    if not tokens:
+        return
+
+    messages = []
+    for token in tokens:
+        message = {
+            "to": token,
+            "sound": "default",
+            "title": title,
+            "body": body,
+            "channelId": "file-updates",
+        }
+        if data:
+            message["data"] = data
+        messages.append(message)
+
+    try:
+        async with httpx.AsyncClient() as client_http:
+            response = await client_http.post(
+                "https://exp.host/--/api/v2/push/send",
+                json=messages,
+                headers={
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                },
+                timeout=10.0,
+            )
+            result = response.json()
+            logger.info(f"Push notification sent to {len(tokens)} devices. Response: {response.status_code}")
+            if response.status_code != 200:
+                logger.error(f"Push API error: {result}")
+    except Exception as e:
+        logger.error(f"Failed to send push notifications: {e}")
+
+
+async def send_push_to_roles(target_roles: list, title: str, body: str, data: dict = None, target_department: str = None):
+    """Find push tokens for given roles and send notifications."""
+    query = {"role": {"$in": target_roles}}
+    if target_department:
+        query["department"] = target_department
+
+    token_docs = await db.push_tokens.find(query, {"token": 1, "_id": 0}).to_list(50)
+    tokens = [doc["token"] for doc in token_docs if doc.get("token")]
+
+    if tokens:
+        await send_push_notifications(tokens, title, body, data)
+    else:
+        logger.info(f"No push tokens found for roles {target_roles}")
 
 # ==================== ADMIN ROUTES ====================
 

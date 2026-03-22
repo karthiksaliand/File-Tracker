@@ -303,6 +303,21 @@ backend:
         agent: "testing"
         comment: "✅ DEPARTMENT PRIVACY FEATURE TESTS PASSED (12/12 - 100% SUCCESS RATE)! Comprehensive testing completed: 1) Created file PRIV001/2026 routed to all 3 departments (tahsildar, sp, forest), 2) SP user can ONLY see SP approval in both file list and detail views, 3) Forest user can ONLY see Forest approval in both views, 4) Tahsildar user can ONLY see Tahsildar approval in both views, 5) Admin/ADC/DC can see ALL 3 department approvals as expected, 6) Audit log filtering working - SP cannot see Forest approval decisions in audit logs. Privacy isolation is working perfectly - department users are completely isolated from other departments' approval statuses."
 
+  - task: "Push Notification - Token Registration and File Submit Triggers"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW FEATURE: Push Notifications via Expo Push API. Features: 1) POST /api/notifications/push-token for token registration with validation, 2) Automatic push notifications on file submission to assigned departments (tahsildar, sp, forest) and ADC, 3) Push notifications on approval submissions to ADC, 4) Push notifications to DC when all departments respond, 5) Error handling for invalid tokens and unauthenticated requests. Uses push_tokens collection for storage."
+      - working: true
+        agent: "testing"
+        comment: "✅ PUSH NOTIFICATION TESTS PASSED (15/15 - 100% SUCCESS RATE)! Comprehensive testing completed: 1) All user logins successful (caseworker, sp, ADC, admin), 2) Push token registration working for all users with ExponentPushToken format, 3) Token storage verified in push_tokens collection, 4) Invalid token correctly rejected with 400 status, 5) Unauthenticated requests rejected with 401 status, 6) File creation and submission triggers push notifications (verified in backend logs: 'Push notification sent to 1 devices. Response: 200'), 7) SP approval submission triggers push notifications to ADC, 8) Backend remains responsive after push operations. Push notifications are fully functional with proper Expo API integration and error handling."
+
 frontend:
   - task: "File Creation Form (file_no, year, description)"
     implemented: true
@@ -380,7 +395,7 @@ test_plan:
 
 agent_communication:
   - agent: "main"
-    message: "Major feature update. Test new APIs: 1) File creation with departments list and priority (POST /api/files with departments and priority fields), 2) ADC decision endpoint (POST /api/files/{id}/adc-decision with {decision:'approve',remark:'ok'}), 3) Approval with approve/reject/na (POST /api/files/{id}/approval with decision='approve'|'reject'|'na'), 4) Admin user edit (PUT /api/admin/users/{id} with {display_name,username}), 5) Admin config (GET/PUT /api/admin/config), 6) Analytics now includes high_priority and overdue counts. Default creds same: caseworker:case123, admin:admin123, sp:sp123, forest:forest123, dc:dc123, adc:adc123, tah_mangaluru:tah123"
+    message: "NEW FEATURE: Push Notifications. Test: 1) POST /api/notifications/push-token with body {token:'ExponentPushToken[test123]'} - should register token, 2) Full workflow - create file as caseworker, submit it, check backend logs for push attempt, 3) Submit approval as SP - should try to push to ADC. Creds: caseworker:case123, sp:sp123, admin:admin123. Token storage in push_tokens collection."
   - agent: "testing"
     message: "🎉 ALL BACKEND TESTS PASSED (17/17 - 100% success rate)! Complete workflow tested: Auth → File Creation (new fields) → Search → Submit → Parallel Approvals (tahsildar/sp/forest) → DC Decision → Admin Edit/Delete. All APIs working perfectly with new field schema (file_no/year/description/tahsildar_location). Old applicant fields correctly rejected. Backend is production-ready!"
   - agent: "testing"
@@ -397,3 +412,5 @@ agent_communication:
     message: "🎉 DEPARTMENT PRIVACY FEATURE TESTING COMPLETE (12/12 - 100% SUCCESS RATE)! Comprehensive testing of the new Department Privacy feature passed all scenarios: ✅ Created file PRIV001/2026 routed to all 3 departments ✅ SP user can ONLY see SP approval status (not tahsildar/forest) ✅ Forest user can ONLY see Forest approval status (not sp/tahsildar) ✅ Tahsildar user can ONLY see Tahsildar approval status (not sp/forest) ✅ Admin/ADC/DC can see ALL 3 department approvals as expected ✅ Audit log filtering working - department users cannot see other departments' approval decisions. Privacy isolation is working perfectly - department users are completely isolated from other departments' approval statuses. NOTE: Corrected usernames for testing - ADC and DC users have uppercase usernames ('ADC', 'DC') not lowercase."
   - agent: "testing"
     message: "✅ LOGIN CONFIG ENDPOINT TESTING COMPLETE (10/10 - 100% SUCCESS RATE)! Comprehensive testing of public login config and admin config management: 1) GET /api/public/login-config working perfectly (no auth required) - returns all expected roles (case_worker, admin, sp, forest_officer, adc, dc, tahsildar) and tahsildar_locations array with 9 locations, 2) Admin login successful, 3) GET /api/admin/config working correctly, 4) PUT /api/admin/config successfully updates role labels (tested SP label change), 5) Public endpoint immediately reflects admin config changes, 6) Config changes can be reverted successfully. RESOLVED: The previously stuck 'Admin Config API - Minor serialization issue with MongoDB ObjectId' has been fixed - all admin config endpoints are fully functional!"
+  - agent: "testing"
+    message: "🎉 PUSH NOTIFICATION TESTING COMPLETE (15/15 - 100% SUCCESS RATE)! Comprehensive testing of the new Push Notification feature passed all scenarios: ✅ All user logins successful (caseworker, sp, ADC, admin) ✅ Push token registration working for all users with proper ExponentPushToken format validation ✅ Token storage verified in push_tokens collection ✅ Invalid token correctly rejected with 400 status ✅ Unauthenticated requests rejected with 401 status ✅ File creation and submission triggers push notifications (verified in backend logs: 'Push notification sent to 1 devices. Response: 200') ✅ SP approval submission triggers push notifications to ADC ✅ Backend remains responsive after push operations ✅ Expo Push API integration working correctly with proper error handling. Push notifications are fully functional and production-ready!"

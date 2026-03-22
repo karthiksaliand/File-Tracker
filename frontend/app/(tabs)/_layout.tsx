@@ -1,11 +1,21 @@
+import React, { useEffect } from 'react';
 import { Tabs, Redirect } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { Colors } from '../../constants/theme';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
+import { usePushNotifications } from '../../hooks/usePushNotifications';
 
 export default function TabLayout() {
   const { user, isLoading } = useAuth();
+  const { registerForPushNotifications } = usePushNotifications();
+
+  // Register push notifications after user logs in
+  useEffect(() => {
+    if (user) {
+      registerForPushNotifications();
+    }
+  }, [user]);
 
   if (isLoading) {
     return (
