@@ -311,7 +311,7 @@ async def create_file(req: FileCreateRequest, user=Depends(get_current_user)):
     return file_doc
 
 @api_router.get("/files")
-async def list_files(user=Depends(get_current_user), status: Optional[str] = None, search: Optional[str] = None, priority: Optional[str] = None, limit: int = 100, skip: int = 0):
+async def list_files(user=Depends(get_current_user), status: Optional[str] = None, search: Optional[str] = None, priority: Optional[str] = None, pending_dept: Optional[str] = None, limit: int = 100, skip: int = 0):
     query = {}
     role = user["role"]
     dept = user["department"]
@@ -333,6 +333,11 @@ async def list_files(user=Depends(get_current_user), status: Optional[str] = Non
 
     if priority and priority != "all":
         query["priority"] = priority
+
+    # Filter by pending department approval
+    if pending_dept and pending_dept != "all":
+        query["departments"] = pending_dept
+        query["status"] = "submitted"
 
     if search:
         query["$or"] = [

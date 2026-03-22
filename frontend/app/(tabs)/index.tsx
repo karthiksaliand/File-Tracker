@@ -9,6 +9,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { fetchAPI } from '../../constants/api';
 import { Colors, Spacing, Radius, StatusColors, StatusLabels } from '../../constants/theme';
+import { setPendingFilter } from '../../constants/filterStore';
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
@@ -69,11 +70,9 @@ export default function Dashboard() {
     return diff;
   };
 
-  const navigateToFiles = (filterStatus?: string, filterPriority?: string) => {
-    const params: any = {};
-    if (filterStatus) params.initialFilter = filterStatus;
-    if (filterPriority) params.initialPriority = filterPriority;
-    router.push({ pathname: '/(tabs)/files', params });
+  const navigateToFiles = (filterStatus?: string, filterPriority?: string, pendingDept?: string) => {
+    setPendingFilter(filterStatus, filterPriority, pendingDept);
+    router.push('/(tabs)/files');
   };
 
   if (loading) {
@@ -137,7 +136,7 @@ export default function Dashboard() {
             <View style={s.deptPendingCard}>
               <Text style={s.sectionTitle}>DEPARTMENT PENDING</Text>
               {Object.entries(analytics.department_pending).map(([dept, count]) => (
-                <TouchableOpacity key={dept} style={s.deptRow} onPress={() => navigateToFiles('submitted')} activeOpacity={0.7}>
+                <TouchableOpacity key={dept} style={s.deptRow} onPress={() => navigateToFiles(undefined, undefined, dept)} activeOpacity={0.7}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <MaterialCommunityIcons
                       name={dept === 'tahsildar' ? 'map-marker' : dept === 'sp' ? 'shield-star' : 'pine-tree'}
