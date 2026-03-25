@@ -79,7 +79,7 @@ export default function LoginScreen() {
   const selectRole = (role: any) => {
     setSelectedRole(role);
     setUsername(role.user);
-    setPassword(role.pass || 'tah123');
+    setPassword('');
   };
 
   const handleLogin = async () => {
