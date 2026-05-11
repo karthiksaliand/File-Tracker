@@ -350,8 +350,8 @@ export default function FileDetailScreen() {
           </View>
         )}
 
-        {/* Audit Log */}
-        {file.audit_log && file.audit_log.length > 0 && (
+        {/* Audit Log - Admin only */}
+        {role === 'admin' && file.audit_log && file.audit_log.length > 0 && (
           <View style={s.card}>
             <Text style={s.cardTitle}>AUDIT LOG</Text>
             {file.audit_log.slice(0, 10).map((log: any) => (

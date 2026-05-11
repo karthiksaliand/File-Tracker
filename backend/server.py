@@ -417,26 +417,12 @@ async def get_file(file_id: str, user=Depends(get_current_user)):
 
     file_doc["approvals"] = approvals
 
-    audits = await db.audit_logs.find({"file_id": file_id}, {"_id": 0}).sort("timestamp", -1).to_list(100)
-
-    # Filter audit logs for department users - hide other departments' approval decisions
-    if dept_filter:
-        other_depts = [d for d in ["tahsildar", "sp", "forest"] if d != dept_filter]
-        filtered_audits = []
-        for audit in audits:
-            # Hide audit entries about other department approvals
-            is_other_dept_action = False
-            if audit.get("action") == "submit_approval":
-                details = audit.get("details", "")
-                for od in other_depts:
-                    if details.startswith(f"{od} decision"):
-                        is_other_dept_action = True
-                        break
-            if not is_other_dept_action:
-                filtered_audits.append(audit)
-        file_doc["audit_log"] = filtered_audits
-    else:
+    # Audit log: admin only
+    if role == "admin":
+        audits = await db.audit_logs.find({"file_id": file_id}, {"_id": 0}).sort("timestamp", -1).to_list(100)
         file_doc["audit_log"] = audits
+    else:
+        file_doc["audit_log"] = []
 
     return file_doc
 
