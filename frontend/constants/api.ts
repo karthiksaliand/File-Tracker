@@ -10,7 +10,7 @@ function getBaseUrl(): string {
   // On mobile (APK): use the env variable set at build time
   // IMPORTANT: When building APK, set EXPO_PUBLIC_BACKEND_URL in frontend/.env
   // to match the deployed website URL (e.g., https://your-deployed-url.com)
-  return process.env.EXPO_PUBLIC_BACKEND_URL || '';
+  return process.env.EXPO_PUBLIC_BACKEND_URL || 'https://file-approval-hub-1.emergent.host';
 }
 
 const BASE_URL = getBaseUrl();
