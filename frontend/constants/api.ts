@@ -2,20 +2,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
 function getBaseUrl(): string {
-  // On web: use the current origin if it looks like our preview/deployed domain
-  if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    const origin = window.location.origin;
-    // If running on the actual app domain (preview or deployed), use it
-    if (origin.includes('emergentagent.com') || origin.includes('emergent.sh')) {
-      // For share/iframe URLs on emergent.sh, use the preview URL directly
-      if (origin.includes('app.emergent.sh')) {
-        return 'https://dept-workflow-2.preview.emergentagent.com';
-      }
-      return origin;
-    }
+  // On web: ALWAYS use the current origin — this ensures the web app
+  // talks to its own backend whether on preview or deployed URL
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location.origin) {
+    return window.location.origin;
   }
-  // Fallback: always use the known working backend URL
-  return process.env.EXPO_PUBLIC_BACKEND_URL || 'https://dept-workflow-2.preview.emergentagent.com';
+  // On mobile (APK): use the env variable set at build time
+  // IMPORTANT: When building APK, set EXPO_PUBLIC_BACKEND_URL in frontend/.env
+  // to match the deployed website URL (e.g., https://your-deployed-url.com)
+  return process.env.EXPO_PUBLIC_BACKEND_URL || '';
 }
 
 const BASE_URL = getBaseUrl();
