@@ -165,10 +165,10 @@ async def log_audit(user_id, user_name, user_role, action, file_id="", file_numb
 # ==================== SEED DATA ====================
 
 async def seed_default_users():
-    count = await db.users.count_documents({})
-    if count > 0:
-        return
-
+    """Idempotent seed: ensures every default user exists. Existing users (matched by
+    username) are left untouched, so admin renames / password resets / deactivations
+    are preserved. Missing default users are restored with their deterministic UUID
+    so historical foreign-key references remain intact."""
     default_users = [
         {"username": "admin", "password": "admin123", "role": "admin", "display_name": "System Admin", "department": "Administration"},
         {"username": "caseworker", "password": "case123", "role": "case_worker", "display_name": "Case Worker", "department": "Filing"},
@@ -187,19 +187,32 @@ async def seed_default_users():
         {"username": "dc", "password": "dc123", "role": "dc", "display_name": "Deputy Commissioner", "department": "Revenue"},
     ]
 
+    created = 0
     for u in default_users:
-        await db.users.insert_one({
-            "id": deterministic_user_id(u["username"]),
-            "username": u["username"],
-            "password_hash": hash_password(u["password"]),
-            "role": u["role"],
-            "display_name": u["display_name"],
-            "department": u["department"],
-            "is_active": True,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        })
+        # Use $setOnInsert so existing users are completely untouched (preserves
+        # admin renames, password resets, deactivations). Only missing users are
+        # restored, with their deterministic UUID so historical references survive.
+        result = await db.users.update_one(
+            {"username": u["username"]},
+            {"$setOnInsert": {
+                "id": deterministic_user_id(u["username"]),
+                "username": u["username"],
+                "password_hash": hash_password(u["password"]),
+                "role": u["role"],
+                "display_name": u["display_name"],
+                "department": u["department"],
+                "is_active": True,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }},
+            upsert=True,
+        )
+        if result.upserted_id is not None:
+            created += 1
 
-    logger.info("Seeded %d default users", len(default_users))
+    if created:
+        logger.info("Seeded %d default users (upsert)", created)
+    else:
+        logger.info("Default users seed: all present, no changes")
 
 
 async def migrate_to_deterministic_user_ids():
