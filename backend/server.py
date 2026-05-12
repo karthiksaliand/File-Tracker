@@ -15,13 +15,21 @@ from jose import jwt, JWTError
 import httpx
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+# override=False so Kubernetes-injected environment variables always win over .env file values
+load_dotenv(ROOT_DIR / '.env', override=False)
 
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-JWT_SECRET = os.environ.get('JWT_SECRET', str(uuid.uuid4()))
+# JWT_SECRET MUST be set via environment in production. The fallback below is a
+# deterministic, hard-coded value so that if for any reason JWT_SECRET is missing,
+# all pod replicas still use the same secret (preventing random logouts) instead of
+# each generating its own random UUID. In production, ALWAYS set JWT_SECRET via env.
+_JWT_SECRET_FALLBACK = "dk-file-tracker-jwt-secret-do-not-use-in-prod-set-env-var-instead"
+JWT_SECRET = os.environ.get('JWT_SECRET') or _JWT_SECRET_FALLBACK
+if JWT_SECRET == _JWT_SECRET_FALLBACK:
+    logging.warning("JWT_SECRET env var not set — using insecure fallback. Set JWT_SECRET in production!")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 24
 
