@@ -318,7 +318,14 @@ async def list_files(user=Depends(get_current_user), status: Optional[str] = Non
     dept = user["department"]
 
     if role == "case_worker":
-        query["created_by"] = user["id"]
+        # Case workers see ALL submitted/non-draft files (filing dept tracks everything),
+        # PLUS their own drafts. This also avoids old files becoming invisible after a
+        # user-id change (e.g. after a DB re-seed or fork) since we don't strictly
+        # require created_by match for non-drafts.
+        query["$or"] = [
+            {"status": {"$ne": "draft"}},
+            {"status": "draft", "created_by": user["id"]},
+        ]
     elif role == "tahsildar":
         query["tahsildar_location"] = dept
         query["status"] = {"$ne": "draft"}
@@ -341,11 +348,17 @@ async def list_files(user=Depends(get_current_user), status: Optional[str] = Non
         query["status"] = "submitted"
 
     if search:
-        query["$or"] = [
+        search_or = [
             {"file_number": {"$regex": search, "$options": "i"}},
             {"file_no": {"$regex": search, "$options": "i"}},
             {"description": {"$regex": search, "$options": "i"}},
         ]
+        # If we already have an $or (e.g. case_worker visibility filter), combine via $and
+        if "$or" in query:
+            existing_or = query.pop("$or")
+            query["$and"] = [{"$or": existing_or}, {"$or": search_or}]
+        else:
+            query["$or"] = search_or
 
     projection = {"_id": 0, "id": 1, "file_number": 1, "file_no": 1, "year": 1,
                   "description": 1, "tahsildar_location": 1, "status": 1, "priority": 1,
