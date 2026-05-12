@@ -1052,58 +1052,231 @@ async def get_credentials(user=Depends(require_admin)):
 
 # ==================== BACKGROUND TASKS ====================
 
+REMINDER_INTERVAL_SECONDS = int(os.environ.get("REMINDER_INTERVAL_SECONDS", 3600))  # check hourly
+REMINDER_THRESHOLD_SECONDS = int(os.environ.get("REMINDER_THRESHOLD_SECONDS", 2 * 86400))  # 2 days
+
+
+async def _send_reminder_for_pending_approval(file_doc: dict, appr: dict, now: datetime):
+    """Sends both in-app and push reminder to dept officer + ADC + DC + Admin."""
+    dept = appr["department"]
+    target_role = "forest_officer" if dept == "forest" else dept
+    dept_detail = appr.get("department_detail", "")
+    file_number = file_doc["file_number"]
+    file_id = file_doc["id"]
+
+    dept_label_map = {"tahsildar": "Tahsildar", "sp": "SP", "forest": "Forest"}
+    dept_label = dept_label_map.get(dept, dept.upper())
+    if dept == "tahsildar" and dept_detail:
+        dept_label = f"Tahsildar ({dept_detail})"
+
+    msg_body_dept = f"File {file_number} is awaiting your review. Please take action."
+    msg_body_oversight = f"{dept_label} has not yet acted on file {file_number} (>2 days pending)."
+
+    notif_docs = []
+
+    # 1) Department officer notification (in-app)
+    notif_docs.append({
+        "id": str(uuid.uuid4()), "target_role": target_role,
+        "target_department": dept_detail if dept == "tahsildar" else "",
+        "file_id": file_id, "file_number": file_number,
+        "type": "reminder", "title": "Reminder: Pending Review",
+        "message": msg_body_dept,
+        "is_read": False, "created_at": now.isoformat(),
+    })
+
+    # 2) ADC / DC / Admin oversight notifications (in-app)
+    for oversight_role in ["adc", "dc", "admin"]:
+        notif_docs.append({
+            "id": str(uuid.uuid4()), "target_role": oversight_role, "target_department": "",
+            "file_id": file_id, "file_number": file_number,
+            "type": "reminder_oversight",
+            "title": f"Pending >2 Days — {dept_label}",
+            "message": msg_body_oversight,
+            "is_read": False, "created_at": now.isoformat(),
+        })
+
+    await db.notifications.insert_many(notif_docs)
+
+    # 3) Push notifications
+    push_data = {"file_id": file_id, "type": "reminder"}
+
+    # Push to department officer (with department filter for tahsildars)
+    if dept == "tahsildar":
+        await send_push_to_roles(
+            [target_role], "⏰ Reminder: Pending Review",
+            msg_body_dept, push_data, target_department=dept_detail
+        )
+    else:
+        await send_push_to_roles(
+            [target_role], "⏰ Reminder: Pending Review",
+            msg_body_dept, push_data
+        )
+
+    # Push to oversight roles (ADC, DC, Admin)
+    await send_push_to_roles(
+        ["adc", "dc", "admin"], f"⏰ Pending >2 Days — {dept_label}",
+        msg_body_oversight, push_data
+    )
+
+    # Update reminder timestamp
+    await db.approvals.update_one(
+        {"id": appr["id"]},
+        {"$set": {"last_reminder_at": now.isoformat()}}
+    )
+
+    await log_audit("system", "System", "system", "reminder_sent", file_id, file_number,
+                    f"2-day reminder sent for {dept_label}")
+
+
 async def reminder_and_escalation_task():
+    """Background loop that:
+       - Checks every REMINDER_INTERVAL_SECONDS (default 1 hr)
+       - For each non-final file (submitted or delayed) with pending approvals:
+            * If 2+ days have passed since last reminder, sends push + in-app reminder
+              to the dept officer AND to ADC + DC + Admin (oversight).
+       - On 30-day deadline crossing, escalates file to 'delayed' and notifies oversight."""
+    logger.info(
+        f"Reminder task started (check every {REMINDER_INTERVAL_SECONDS}s, threshold {REMINDER_THRESHOLD_SECONDS}s)"
+    )
     while True:
         try:
-            await asyncio.sleep(300)
+            await asyncio.sleep(REMINDER_INTERVAL_SECONDS)
             now = datetime.now(timezone.utc)
 
-            submitted_files = await db.files.find(
-                {"status": "submitted"},
-                {"_id": 0, "id": 1, "file_number": 1, "deadline": 1, "tahsildar_location": 1}
-            ).to_list(500)
+            # Include 'submitted' AND 'delayed' so reminders keep firing even after deadline
+            active_files = await db.files.find(
+                {"status": {"$in": ["submitted", "delayed"]}},
+                {"_id": 0, "id": 1, "file_number": 1, "deadline": 1,
+                 "tahsildar_location": 1, "status": 1}
+            ).to_list(1000)
 
-            for file_doc in submitted_files:
-                if not file_doc.get("deadline"):
-                    continue
-                deadline_str = file_doc["deadline"]
-                if deadline_str[-1] == 'Z':
-                    deadline_str = deadline_str.replace('Z', '+00:00')
-                deadline = datetime.fromisoformat(deadline_str).replace(tzinfo=timezone.utc)
+            for file_doc in active_files:
+                # ---- 30-day escalation (only fires once when status flips) ----
+                if file_doc.get("status") == "submitted" and file_doc.get("deadline"):
+                    deadline_str = file_doc["deadline"]
+                    if deadline_str.endswith('Z'):
+                        deadline_str = deadline_str.replace('Z', '+00:00')
+                    try:
+                        deadline = datetime.fromisoformat(deadline_str)
+                        if deadline.tzinfo is None:
+                            deadline = deadline.replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        continue
 
-                if now > deadline:
-                    await db.files.update_one({"id": file_doc["id"]}, {"$set": {"status": "delayed"}})
-                    for role in ["admin", "adc", "dc"]:
-                        await db.notifications.insert_one({
-                            "id": str(uuid.uuid4()), "target_role": role, "target_department": "",
-                            "file_id": file_doc["id"], "file_number": file_doc["file_number"],
-                            "type": "escalation", "title": "DEADLINE CROSSED",
-                            "message": f"File {file_doc['file_number']} crossed the 30-day deadline.",
-                            "is_read": False, "created_at": now.isoformat(),
-                        })
-                    await log_audit("system", "System", "system", "deadline_escalation", file_doc["id"], file_doc["file_number"], "30-day deadline crossed")
-                    continue
+                    if now > deadline:
+                        await db.files.update_one(
+                            {"id": file_doc["id"]},
+                            {"$set": {"status": "delayed"}}
+                        )
+                        escalation_msg = f"File {file_doc['file_number']} crossed the 30-day deadline."
+                        for role in ["admin", "adc", "dc"]:
+                            await db.notifications.insert_one({
+                                "id": str(uuid.uuid4()), "target_role": role, "target_department": "",
+                                "file_id": file_doc["id"], "file_number": file_doc["file_number"],
+                                "type": "escalation", "title": "⚠ DEADLINE CROSSED",
+                                "message": escalation_msg,
+                                "is_read": False, "created_at": now.isoformat(),
+                            })
+                        await send_push_to_roles(
+                            ["admin", "adc", "dc"],
+                            "⚠ DEADLINE CROSSED",
+                            escalation_msg,
+                            {"file_id": file_doc["id"], "type": "escalation"}
+                        )
+                        await log_audit("system", "System", "system", "deadline_escalation",
+                                        file_doc["id"], file_doc["file_number"],
+                                        "30-day deadline crossed")
+                        # Continue to process reminders for the same file (now delayed)
+                        file_doc["status"] = "delayed"
 
-                pending = await db.approvals.find({"file_id": file_doc["id"], "decision": None}, {"_id": 0}).to_list(10)
+                # ---- 2-day recurring reminders (continues even when delayed) ----
+                pending = await db.approvals.find(
+                    {"file_id": file_doc["id"], "decision": None},
+                    {"_id": 0}
+                ).to_list(10)
                 for appr in pending:
-                    last_r_str = appr["last_reminder_at"]
-                    if last_r_str[-1] == 'Z':
+                    last_r_str = appr.get("last_reminder_at") or appr.get("created_at")
+                    if not last_r_str:
+                        continue
+                    if last_r_str.endswith('Z'):
                         last_r_str = last_r_str.replace('Z', '+00:00')
-                    last_r = datetime.fromisoformat(last_r_str).replace(tzinfo=timezone.utc)
-                    if (now - last_r).total_seconds() >= 2 * 86400:
-                        target_role = "forest_officer" if appr["department"] == "forest" else appr["department"]
-                        await db.notifications.insert_one({
-                            "id": str(uuid.uuid4()), "target_role": target_role,
-                            "target_department": appr.get("department_detail", ""),
-                            "file_id": file_doc["id"], "file_number": file_doc["file_number"],
-                            "type": "reminder", "title": "Reminder: Pending Review",
-                            "message": f"File {file_doc['file_number']} awaits your review.",
-                            "is_read": False, "created_at": now.isoformat(),
-                        })
-                        await db.approvals.update_one({"id": appr["id"]}, {"$set": {"last_reminder_at": now.isoformat()}})
+                    try:
+                        last_r = datetime.fromisoformat(last_r_str)
+                        if last_r.tzinfo is None:
+                            last_r = last_r.replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        continue
+
+                    if (now - last_r).total_seconds() >= REMINDER_THRESHOLD_SECONDS:
+                        await _send_reminder_for_pending_approval(file_doc, appr, now)
 
         except Exception as e:
-            logger.error(f"Reminder task error: {e}")
+            logger.error(f"Reminder task error: {e}", exc_info=True)
+
+
+# ==================== ADMIN MANUAL REMINDER TRIGGER ====================
+
+@api_router.post("/admin/trigger-reminders")
+async def admin_trigger_reminders(user=Depends(require_admin)):
+    """Manually trigger reminder sweep for all pending approvals older than 2 days.
+       Useful for admins and for testing the reminder system."""
+    now = datetime.now(timezone.utc)
+    active_files = await db.files.find(
+        {"status": {"$in": ["submitted", "delayed"]}},
+        {"_id": 0, "id": 1, "file_number": 1, "tahsildar_location": 1, "status": 1, "deadline": 1}
+    ).to_list(1000)
+
+    reminders_sent = 0
+    for file_doc in active_files:
+        pending = await db.approvals.find(
+            {"file_id": file_doc["id"], "decision": None},
+            {"_id": 0}
+        ).to_list(10)
+        for appr in pending:
+            last_r_str = appr.get("last_reminder_at") or appr.get("created_at")
+            if not last_r_str:
+                continue
+            if last_r_str.endswith('Z'):
+                last_r_str = last_r_str.replace('Z', '+00:00')
+            try:
+                last_r = datetime.fromisoformat(last_r_str)
+                if last_r.tzinfo is None:
+                    last_r = last_r.replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            if (now - last_r).total_seconds() >= REMINDER_THRESHOLD_SECONDS:
+                await _send_reminder_for_pending_approval(file_doc, appr, now)
+                reminders_sent += 1
+
+    await log_audit(user["id"], user["display_name"], user["role"], "manual_reminder_sweep",
+                    details=f"Manually triggered reminders: {reminders_sent} sent")
+    return {"message": "Reminder sweep complete", "reminders_sent": reminders_sent}
+
+
+@api_router.post("/admin/force-reminder/{file_id}")
+async def admin_force_reminder(file_id: str, user=Depends(require_admin)):
+    """Force-send a reminder for a specific file regardless of timing (admin override).
+       Useful for testing and for urgent nudges."""
+    file_doc = await db.files.find_one({"id": file_id}, {"_id": 0})
+    if not file_doc:
+        raise HTTPException(status_code=404, detail="File not found")
+    if file_doc.get("status") not in ["submitted", "delayed"]:
+        raise HTTPException(status_code=400, detail="File is not active for reminders")
+
+    pending = await db.approvals.find(
+        {"file_id": file_id, "decision": None}, {"_id": 0}
+    ).to_list(10)
+    if not pending:
+        return {"message": "No pending approvals — nothing to remind", "reminders_sent": 0}
+
+    now = datetime.now(timezone.utc)
+    for appr in pending:
+        await _send_reminder_for_pending_approval(file_doc, appr, now)
+
+    await log_audit(user["id"], user["display_name"], user["role"], "force_reminder",
+                    file_id, file_doc["file_number"],
+                    f"Admin force-sent reminders for {len(pending)} pending dept(s)")
+    return {"message": "Forced reminders sent", "reminders_sent": len(pending)}
 
 # ==================== APP EVENTS ====================
 

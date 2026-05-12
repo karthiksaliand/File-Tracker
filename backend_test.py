@@ -1,298 +1,214 @@
-#!/usr/bin/env python3
 """
-Backend Test Suite for Government File Tracking App - Login Config Testing
-Tests the public login config endpoint and admin config management functionality.
+Backend test for 2-Day Reminder system.
+Tests endpoints under backend_v2 in test_result.md.
 """
-
-import requests
-import json
+import os
 import sys
-from typing import Dict, Any, Optional
+import time
+import requests
 
-# Backend URL from frontend/.env
-BASE_URL = "https://dept-workflow-2.preview.emergentagent.com/api"
+BASE = None
+with open("/app/frontend/.env") as f:
+    for line in f:
+        if line.startswith("EXPO_PUBLIC_BACKEND_URL="):
+            BASE = line.split("=", 1)[1].strip().strip('"').strip("'")
+            break
+assert BASE, "EXPO_PUBLIC_BACKEND_URL not found"
+API = BASE.rstrip("/") + "/api"
+print(f"Using API base: {API}")
 
-class LoginConfigTestRunner:
-    def __init__(self):
-        self.admin_token = None
-        self.passed = 0
-        self.failed = 0
-        self.original_sp_label = None
-        
-    def log(self, message: str, level: str = "INFO"):
-        print(f"[{level}] {message}")
-        
-    def login_admin(self) -> Optional[str]:
-        """Login as admin and return token"""
-        try:
-            response = requests.post(f"{BASE_URL}/auth/login", 
-                                   json={"username": "admin", "password": "admin123"})
-            if response.status_code == 200:
-                data = response.json()
-                token = data.get("token")
-                self.admin_token = token
-                self.log(f"✅ Admin login successful")
-                return token
-            else:
-                self.log(f"❌ Admin login failed: {response.status_code} - {response.text}", "ERROR")
-                return None
-        except Exception as e:
-            self.log(f"❌ Admin login error: {str(e)}", "ERROR")
-            return None
-    
-    def make_authenticated_request(self, method: str, endpoint: str, data: Dict = None) -> requests.Response:
-        """Make authenticated request with admin token"""
-        headers = {"Authorization": f"Bearer {self.admin_token}"}
-        if method.upper() == "GET":
-            return requests.get(f"{BASE_URL}{endpoint}", headers=headers)
-        elif method.upper() == "PUT":
-            return requests.put(f"{BASE_URL}{endpoint}", headers=headers, json=data)
-    
-    def test_public_login_config(self):
-        """Test 1: GET /api/public/login-config (NO auth token needed)"""
-        self.log("\n=== Test 1: Public Login Config Endpoint ===")
-        
-        try:
-            # Test without authentication
-            response = requests.get(f"{BASE_URL}/public/login-config")
-            
-            if response.status_code == 200:
-                data = response.json()
-                self.log(f"✅ Public login config endpoint accessible (200 OK)")
-                
-                # Check if response has required fields
-                if "role_labels" in data and "tahsildar_locations" in data:
-                    self.log(f"✅ Response contains required fields: role_labels and tahsildar_locations")
-                    self.passed += 1
-                    
-                    # Store original SP label for later restoration
-                    self.original_sp_label = data["role_labels"].get("sp", "Superintendent of Police")
-                    
-                    # Verify expected roles are present
-                    expected_roles = ["case_worker", "admin", "sp", "forest_officer", "adc", "dc", "tahsildar"]
-                    role_labels = data["role_labels"]
-                    missing_roles = [role for role in expected_roles if role not in role_labels]
-                    
-                    if not missing_roles:
-                        self.log(f"✅ All expected roles present: {list(role_labels.keys())}")
-                        self.passed += 1
-                    else:
-                        self.log(f"❌ Missing roles: {missing_roles}", "ERROR")
-                        self.failed += 1
-                    
-                    # Verify tahsildar_locations is an array
-                    tahsildar_locations = data["tahsildar_locations"]
-                    if isinstance(tahsildar_locations, list) and len(tahsildar_locations) > 0:
-                        self.log(f"✅ tahsildar_locations is array with {len(tahsildar_locations)} locations: {tahsildar_locations[:3]}...")
-                        self.passed += 1
-                    else:
-                        self.log(f"❌ tahsildar_locations is not a valid array: {type(tahsildar_locations)}", "ERROR")
-                        self.failed += 1
-                        
-                    self.log(f"📋 Current role labels: {json.dumps(role_labels, indent=2)}")
-                    
-                else:
-                    self.log(f"❌ Response missing required fields. Got: {list(data.keys())}", "ERROR")
-                    self.failed += 1
-            else:
-                self.log(f"❌ Public login config failed: {response.status_code} - {response.text}", "ERROR")
-                self.failed += 1
-                
-        except Exception as e:
-            self.log(f"❌ Public login config test error: {str(e)}", "ERROR")
-            self.failed += 1
-    
-    def test_admin_config_update(self):
-        """Test 2-4: Admin config update functionality"""
-        self.log("\n=== Test 2-4: Admin Config Update ===")
-        
-        # First login as admin
-        if not self.login_admin():
-            self.failed += 1
-            return
-        
-        # Test 2: Get current admin config
-        self.log("\n--- Test 2: Get Admin Config ---")
-        try:
-            response = self.make_authenticated_request("GET", "/admin/config")
-            
-            if response.status_code == 200:
-                config_data = response.json()
-                self.log(f"✅ Admin config retrieved successfully")
-                self.passed += 1
-                
-                if "role_labels" in config_data:
-                    current_sp_label = config_data["role_labels"].get("sp", "Superintendent of Police")
-                    self.log(f"📋 Current SP label: '{current_sp_label}'")
-                else:
-                    self.log(f"⚠️ No role_labels in admin config, will create new one")
-                    
-            else:
-                self.log(f"❌ Admin config retrieval failed: {response.status_code} - {response.text}", "ERROR")
-                self.failed += 1
-                return
-                
-        except Exception as e:
-            self.log(f"❌ Admin config retrieval error: {str(e)}", "ERROR")
-            self.failed += 1
-            return
-        
-        # Test 3: Update SP role label
-        self.log("\n--- Test 3: Update SP Role Label ---")
-        try:
-            new_sp_label = "SP - Police Department"
-            update_data = {
-                "role_labels": {
-                    "case_worker": "Case Worker",
-                    "admin": "System Admin", 
-                    "tahsildar": "Tahsildar",
-                    "sp": new_sp_label,  # Changed label
-                    "forest_officer": "Forest Officer (DFO/DCF)",
-                    "adc": "Asst. Commissioner (ADC)",
-                    "dc": "Deputy Commissioner (DC)"
-                }
-            }
-            
-            response = self.make_authenticated_request("PUT", "/admin/config", update_data)
-            
-            if response.status_code == 200:
-                self.log(f"✅ Admin config updated successfully")
-                self.passed += 1
-                
-                # Verify the update
-                updated_config = response.json()
-                if updated_config.get("role_labels", {}).get("sp") == new_sp_label:
-                    self.log(f"✅ SP label successfully updated to: '{new_sp_label}'")
-                    self.passed += 1
-                else:
-                    self.log(f"❌ SP label not updated correctly. Got: '{updated_config.get('role_labels', {}).get('sp')}'", "ERROR")
-                    self.failed += 1
-                    
-            else:
-                self.log(f"❌ Admin config update failed: {response.status_code} - {response.text}", "ERROR")
-                self.failed += 1
-                return
-                
-        except Exception as e:
-            self.log(f"❌ Admin config update error: {str(e)}", "ERROR")
-            self.failed += 1
-            return
-        
-        # Test 4: Verify public endpoint reflects the change
-        self.log("\n--- Test 4: Verify Public Endpoint Reflects Change ---")
-        try:
-            response = requests.get(f"{BASE_URL}/public/login-config")
-            
-            if response.status_code == 200:
-                data = response.json()
-                public_sp_label = data.get("role_labels", {}).get("sp")
-                
-                if public_sp_label == new_sp_label:
-                    self.log(f"✅ Public endpoint reflects updated SP label: '{public_sp_label}'")
-                    self.passed += 1
-                else:
-                    self.log(f"❌ Public endpoint does not reflect change. Expected: '{new_sp_label}', Got: '{public_sp_label}'", "ERROR")
-                    self.failed += 1
-                    
-            else:
-                self.log(f"❌ Public endpoint verification failed: {response.status_code} - {response.text}", "ERROR")
-                self.failed += 1
-                
-        except Exception as e:
-            self.log(f"❌ Public endpoint verification error: {str(e)}", "ERROR")
-            self.failed += 1
-    
-    def test_revert_changes(self):
-        """Test 5: Revert the changes back"""
-        self.log("\n=== Test 5: Revert Changes ===")
-        
-        if not self.admin_token:
-            self.log("❌ No admin token available for revert", "ERROR")
-            self.failed += 1
-            return
-        
-        try:
-            # Revert SP label back to original
-            revert_data = {
-                "role_labels": {
-                    "case_worker": "Case Worker",
-                    "admin": "System Admin",
-                    "tahsildar": "Tahsildar", 
-                    "sp": self.original_sp_label,  # Revert to original
-                    "forest_officer": "Forest Officer (DFO/DCF)",
-                    "adc": "Asst. Commissioner (ADC)",
-                    "dc": "Deputy Commissioner (DC)"
-                }
-            }
-            
-            response = self.make_authenticated_request("PUT", "/admin/config", revert_data)
-            
-            if response.status_code == 200:
-                self.log(f"✅ Config reverted successfully")
-                self.passed += 1
-                
-                # Verify revert
-                reverted_config = response.json()
-                if reverted_config.get("role_labels", {}).get("sp") == self.original_sp_label:
-                    self.log(f"✅ SP label reverted to original: '{self.original_sp_label}'")
-                    self.passed += 1
-                else:
-                    self.log(f"❌ SP label not reverted correctly", "ERROR")
-                    self.failed += 1
-                    
-                # Final verification with public endpoint
-                public_response = requests.get(f"{BASE_URL}/public/login-config")
-                if public_response.status_code == 200:
-                    public_data = public_response.json()
-                    final_sp_label = public_data.get("role_labels", {}).get("sp")
-                    
-                    if final_sp_label == self.original_sp_label:
-                        self.log(f"✅ Public endpoint shows reverted SP label: '{final_sp_label}'")
-                        self.passed += 1
-                    else:
-                        self.log(f"❌ Public endpoint does not show reverted label. Expected: '{self.original_sp_label}', Got: '{final_sp_label}'", "ERROR")
-                        self.failed += 1
-                        
-            else:
-                self.log(f"❌ Config revert failed: {response.status_code} - {response.text}", "ERROR")
-                self.failed += 1
-                
-        except Exception as e:
-            self.log(f"❌ Config revert error: {str(e)}", "ERROR")
-            self.failed += 1
-    
-    def run_tests(self):
-        """Run all login config tests"""
-        self.log("🚀 Starting Login Config Tests")
-        
-        try:
-            # Test 1: Public login config endpoint
-            self.test_public_login_config()
-            
-            # Test 2-4: Admin config management
-            self.test_admin_config_update()
-            
-            # Test 5: Revert changes
-            self.test_revert_changes()
-            
-            # Summary
-            self.log(f"\n🎯 LOGIN CONFIG TEST SUMMARY:")
-            self.log(f"✅ Passed: {self.passed}")
-            self.log(f"❌ Failed: {self.failed}")
-            self.log(f"📊 Success Rate: {(self.passed/(self.passed+self.failed)*100):.1f}%")
-            
-            if self.failed == 0:
-                self.log("🎉 ALL LOGIN CONFIG TESTS PASSED!")
-                return True
-            else:
-                self.log("⚠️ Some tests failed - Login config functionality needs attention")
-                return False
-                
-        except Exception as e:
-            self.log(f"❌ Test execution error: {str(e)}", "ERROR")
-            return False
+PASS, FAIL = [], []
 
-if __name__ == "__main__":
-    runner = LoginConfigTestRunner()
-    success = runner.run_tests()
-    sys.exit(0 if success else 1)
+
+def record(ok, name, detail=""):
+    (PASS if ok else FAIL).append((name, detail))
+    icon = "PASS" if ok else "FAIL"
+    print(f"[{icon}] {name}: {detail}")
+
+
+def login(username, password):
+    r = requests.post(f"{API}/auth/login", json={"username": username, "password": password}, timeout=20)
+    if r.status_code != 200:
+        record(False, f"login {username}", f"HTTP {r.status_code} {r.text[:200]}")
+        return None
+    return r.json()["token"]
+
+
+def auth(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
+print("\n=== Logging in users ===")
+tk_caseworker = login("caseworker", "case123")
+tk_admin = login("admin", "admin123")
+tk_sp = login("sp", "sp123")
+tk_forest = login("forest", "forest123")
+tk_adc = login("adc", "adc123")
+tk_dc = login("dc", "dc123")
+tk_tah = login("tah_mangaluru", "tah123")
+
+if not all([tk_caseworker, tk_admin, tk_sp, tk_forest, tk_adc, tk_dc, tk_tah]):
+    print("Some logins failed; aborting.")
+    sys.exit(1)
+record(True, "All logins", "caseworker/admin/sp/forest/adc/dc/tah_mangaluru OK")
+
+unique_suffix = str(int(time.time()))[-6:]
+file_no = f"REM{unique_suffix}"
+print(f"\n=== Creating file file_no={file_no} ===")
+payload = {
+    "file_no": file_no,
+    "year": "2026",
+    "description": "Reminder test",
+    "tahsildar_location": "Mangaluru",
+    "departments": ["tahsildar", "sp", "forest"],
+    "priority": "high",
+}
+r = requests.post(f"{API}/files", json=payload, headers=auth(tk_caseworker), timeout=20)
+if r.status_code != 200:
+    record(False, "create file", f"HTTP {r.status_code} {r.text[:300]}")
+    sys.exit(1)
+file_data = r.json()
+file_id = file_data["id"]
+file_number = file_data["file_number"]
+record(True, "create file", f"id={file_id} file_number={file_number}")
+
+r = requests.post(f"{API}/files/{file_id}/submit", headers=auth(tk_caseworker), timeout=20)
+record(r.status_code == 200, "submit file", f"HTTP {r.status_code} {r.text[:200]}")
+
+print("\n=== trigger-reminders as admin (expect 0) ===")
+r = requests.post(f"{API}/admin/trigger-reminders", headers=auth(tk_admin), timeout=30)
+if r.status_code == 200:
+    body = r.json()
+    rs = body.get("reminders_sent")
+    record(rs == 0, "trigger-reminders returns reminders_sent=0", f"resp={body}")
+    record("message" in body and "reminders_sent" in body, "response shape has message+reminders_sent",
+           f"keys={list(body.keys())}")
+else:
+    record(False, "trigger-reminders admin call", f"HTTP {r.status_code} {r.text[:200]}")
+
+for who, tk in [("caseworker", tk_caseworker), ("sp", tk_sp)]:
+    r = requests.post(f"{API}/admin/trigger-reminders", headers=auth(tk), timeout=15)
+    record(r.status_code == 403, f"trigger-reminders 403 for {who}", f"HTTP {r.status_code}")
+
+print("\n=== force-reminder as admin (expect 3) ===")
+r = requests.post(f"{API}/admin/force-reminder/{file_id}", headers=auth(tk_admin), timeout=30)
+if r.status_code == 200:
+    body = r.json()
+    rs = body.get("reminders_sent")
+    record(rs == 3, "force-reminder reminders_sent==3", f"resp={body}")
+else:
+    record(False, "force-reminder admin call", f"HTTP {r.status_code} {r.text[:300]}")
+
+r = requests.post(f"{API}/admin/force-reminder/{file_id}", headers=auth(tk_sp), timeout=15)
+record(r.status_code == 403, "force-reminder 403 for sp", f"HTTP {r.status_code}")
+
+r = requests.post(f"{API}/admin/force-reminder/nonexistent-id-xyz", headers=auth(tk_admin), timeout=15)
+record(r.status_code == 404, "force-reminder 404 for unknown file_id", f"HTTP {r.status_code}")
+
+print("\n=== force-reminder 400 for draft ===")
+draft_payload = {
+    "file_no": f"DRAFT{unique_suffix}",
+    "year": "2026",
+    "description": "Draft test",
+    "tahsildar_location": "Mangaluru",
+    "departments": ["sp"],
+    "priority": "normal",
+}
+r = requests.post(f"{API}/files", json=draft_payload, headers=auth(tk_caseworker), timeout=15)
+if r.status_code == 200:
+    draft_id = r.json()["id"]
+    r2 = requests.post(f"{API}/admin/force-reminder/{draft_id}", headers=auth(tk_admin), timeout=15)
+    record(r2.status_code == 400, "force-reminder 400 for draft", f"HTTP {r2.status_code} {r2.text[:200]}")
+else:
+    record(False, "create draft file", f"HTTP {r.status_code}")
+
+
+def get_notifs(tk):
+    r = requests.get(f"{API}/notifications", headers=auth(tk), timeout=15, params={"limit": 200})
+    return r.json() if r.status_code == 200 else []
+
+
+def find_for_file(notifs, fn, predicate):
+    return [n for n in notifs if n.get("file_number") == fn and predicate(n)]
+
+
+print("\n=== Verify notifications ===")
+sp_notifs = get_notifs(tk_sp)
+matches = find_for_file(sp_notifs, file_number,
+                        lambda n: n.get("type") == "reminder" and n.get("title") == "Reminder: Pending Review")
+record(len(matches) >= 1, "SP sees dept reminder notification",
+       f"matches={len(matches)} sample={matches[0] if matches else None}")
+if matches:
+    record(file_number in matches[0].get("message", ""), "SP reminder message contains file_number",
+           f"msg={matches[0].get('message')}")
+    record(matches[0].get("target_role") == "sp", "SP reminder target_role=='sp'",
+           f"target_role={matches[0].get('target_role')}")
+
+forest_notifs = get_notifs(tk_forest)
+forest_matches = find_for_file(forest_notifs, file_number,
+                               lambda n: n.get("type") == "reminder" and n.get("title") == "Reminder: Pending Review")
+record(len(forest_matches) >= 1, "Forest sees dept reminder",
+       f"matches={len(forest_matches)}")
+if forest_matches:
+    record(forest_matches[0].get("target_role") == "forest_officer",
+           "Forest reminder target_role=='forest_officer'",
+           f"target_role={forest_matches[0].get('target_role')}")
+
+tah_notifs = get_notifs(tk_tah)
+tah_matches = find_for_file(tah_notifs, file_number,
+                            lambda n: n.get("type") == "reminder" and n.get("title") == "Reminder: Pending Review")
+record(len(tah_matches) >= 1, "Tahsildar Mangaluru sees dept reminder",
+       f"matches={len(tah_matches)}")
+if tah_matches:
+    record(tah_matches[0].get("target_department") == "Mangaluru",
+           "Tahsildar reminder target_department=='Mangaluru'",
+           f"target_department={tah_matches[0].get('target_department')}")
+
+adc_notifs = get_notifs(tk_adc)
+adc_matches = find_for_file(adc_notifs, file_number,
+                            lambda n: n.get("type") == "reminder_oversight" and n.get("title", "").startswith("Pending >2 Days"))
+record(len(adc_matches) >= 3, "ADC sees 3 oversight reminders",
+       f"matches={len(adc_matches)} titles={[m.get('title') for m in adc_matches]}")
+
+adc_titles = {m.get("title") for m in adc_matches}
+expected_titles = {"Pending >2 Days — SP", "Pending >2 Days — Forest", "Pending >2 Days — Tahsildar (Mangaluru)"}
+record(expected_titles.issubset(adc_titles), "ADC oversight has SP/Forest/Tahsildar(Mangaluru) titles",
+       f"actual={adc_titles}")
+
+dc_notifs = get_notifs(tk_dc)
+dc_matches = find_for_file(dc_notifs, file_number,
+                           lambda n: n.get("type") == "reminder_oversight" and n.get("title", "").startswith("Pending >2 Days"))
+record(len(dc_matches) >= 3, "DC sees 3 oversight reminders", f"matches={len(dc_matches)}")
+
+admin_notifs = get_notifs(tk_admin)
+admin_matches = find_for_file(admin_notifs, file_number,
+                              lambda n: n.get("type") == "reminder_oversight" and n.get("title", "").startswith("Pending >2 Days"))
+record(len(admin_matches) >= 3, "Admin sees 3 oversight reminders", f"matches={len(admin_matches)}")
+
+print("\n=== Check backend logs for push attempts ===")
+import subprocess
+try:
+    log_out = subprocess.run(
+        ["bash", "-c", "tail -n 800 /var/log/supervisor/backend.err.log /var/log/supervisor/backend.out.log 2>/dev/null"],
+        capture_output=True, text=True, timeout=10
+    ).stdout
+    push_lines = [l for l in log_out.splitlines() if "Push notification" in l]
+    record(len(push_lines) >= 1, "Backend logs show 'Push notification' attempts after force-reminder",
+           f"count={len(push_lines)} sample={push_lines[-1][:200] if push_lines else 'none'}")
+except Exception as e:
+    record(False, "Backend log check", f"error={e}")
+
+print("\n=== Second trigger-reminders (should still be 0) ===")
+r = requests.post(f"{API}/admin/trigger-reminders", headers=auth(tk_admin), timeout=20)
+if r.status_code == 200:
+    record(r.json().get("reminders_sent") == 0,
+           "Second trigger-reminders returns 0 (last_reminder_at fresh)",
+           f"resp={r.json()}")
+
+print("\n" + "=" * 80)
+print(f"PASSED: {len(PASS)}  FAILED: {len(FAIL)}")
+if FAIL:
+    print("\nFAILURES:")
+    for n, d in FAIL:
+        print(f"  FAIL {n}: {d}")
+sys.exit(0 if not FAIL else 1)

@@ -319,6 +319,34 @@ export default function AdminScreen() {
                   </View>
                 </View>
               ))}
+
+              <Text style={[s.sectionTitle, { marginTop: 20 }]}>AUTOMATIC REMINDERS</Text>
+              <View style={s.reminderCard}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                  <MaterialCommunityIcons name="bell-ring-outline" size={20} color={Colors.primary} />
+                  <Text style={s.reminderTitle}>2-Day Reminder System</Text>
+                </View>
+                <Text style={s.reminderDesc}>
+                  Background job checks hourly. When a department&apos;s approval is pending more than 2 days, the system sends push + in-app notifications to:
+                </Text>
+                <Text style={s.reminderBullet}>• Department officer (Tahsildar/SP/Forest)</Text>
+                <Text style={s.reminderBullet}>• ADC, DC, and Admin (oversight)</Text>
+                <Text style={s.reminderBullet}>• Auto-escalates files crossing the 30-day deadline</Text>
+                <TouchableOpacity
+                  style={s.triggerBtn}
+                  onPress={async () => {
+                    try {
+                      const res = await fetchAPI('/admin/trigger-reminders', { method: 'POST' });
+                      showMsg('Reminders Sent', `${res.reminders_sent} reminder(s) dispatched.`);
+                    } catch (e: any) {
+                      showMsg('Error', e.message);
+                    }
+                  }}
+                >
+                  <MaterialCommunityIcons name="send" size={16} color="#FFF" />
+                  <Text style={s.triggerBtnText}>Run Reminder Sweep Now</Text>
+                </TouchableOpacity>
+              </View>
             </>
           )}
 
@@ -494,6 +522,14 @@ const s = StyleSheet.create({
   deptLabel: { fontSize: 13, fontWeight: '700', color: Colors.foreground },
   deptBadge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
   deptCount: { fontSize: 12, fontWeight: '700' },
+
+  // Reminder card
+  reminderCard: { backgroundColor: Colors.card, borderRadius: Radius.sm, padding: 14, borderWidth: 1, borderColor: Colors.border, marginBottom: 12 },
+  reminderTitle: { fontSize: 14, fontWeight: '700', color: Colors.foreground, marginLeft: 6 },
+  reminderDesc: { fontSize: 12, color: Colors.mutedForeground, lineHeight: 18, marginBottom: 6 },
+  reminderBullet: { fontSize: 12, color: Colors.foreground, marginLeft: 4, lineHeight: 20 },
+  triggerBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: Colors.primary, borderRadius: 8, paddingVertical: 10, marginTop: 12 },
+  triggerBtnText: { fontSize: 13, fontWeight: '700', color: '#FFF' },
 
   // Audit
   auditCard: { backgroundColor: Colors.card, borderRadius: Radius.sm, padding: 12, marginBottom: 6, borderWidth: 1, borderColor: Colors.border },

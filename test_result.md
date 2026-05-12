@@ -379,15 +379,60 @@ frontend:
         agent: "testing"
         comment: "✅ FILE LIST VIEW TESTS PASSED - Dashboard recent files section correctly displays file descriptions instead of applicant names. File cards show proper file numbering (DK/FILE/2026/xxxx format) and description text. Files tab navigation and basic search functionality working."
 
+backend_v2:
+  - task: "Automatic 2-Day Reminder Background Task"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "ENHANCED reminder_and_escalation_task background loop. Runs every 1hr (REMINDER_INTERVAL_SECONDS=3600). For each pending approval older than 2 days (REMINDER_THRESHOLD_SECONDS=172800): sends in-app + push notifications to dept officer AND oversight roles (ADC, DC, Admin). Also handles 30-day deadline escalation with push to admin/adc/dc. Includes 'submitted' AND 'delayed' statuses so reminders continue. Logs reminders to audit trail."
+      - working: true
+        agent: "testing"
+        comment: "✅ BACKGROUND TASK VERIFIED — supervisor logs (/var/log/supervisor/backend.err.log) show 'Reminder task started (check every 3600s, threshold 172800s)' immediately after each backend startup. 2-day threshold enforcement validated indirectly via admin/trigger-reminders endpoint (returns reminders_sent=0 for just-submitted file). Push notification path exercised via force-reminder; backend logs show 'Push notification sent to N devices. Response: 200' entries and 'No push tokens found for roles ['forest_officer']' lines, confirming target_role mapping forest → forest_officer."
+
+  - task: "Admin Trigger Reminders Endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "POST /api/admin/trigger-reminders (admin only). Manually triggers a reminder sweep over all active files. Sends reminders to pending approvals older than 2 days (using last_reminder_at timestamp). Returns count of reminders sent."
+      - working: true
+        agent: "testing"
+        comment: "✅ TRIGGER-REMINDERS TESTS PASSED. As admin → 200 with body {message:'Reminder sweep complete', reminders_sent:0} on just-submitted file (proves 2-day threshold). As caseworker → 403. As sp → 403. After force-reminder (which refreshes last_reminder_at), second admin call still returns reminders_sent=0, confirming threshold is respected per-approval."
+
+  - task: "Admin Force Reminder Endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "POST /api/admin/force-reminder/{file_id} (admin only). Force-sends reminders for a specific file regardless of last_reminder_at timing. Useful for urgent nudges. Pushes to dept officer + ADC/DC/Admin."
+      - working: true
+        agent: "testing"
+        comment: "✅ FORCE-REMINDER TESTS PASSED (24/24). Submitted file with departments=[tahsildar,sp,forest], priority=high. POST /admin/force-reminder/{id} as admin → 200 {reminders_sent:3}. Notifications verified: SP sees 1 dept-officer 'Reminder: Pending Review' (target_role=sp, message contains file_number). Forest sees 1 dept reminder with target_role='forest_officer' (NOT 'forest'). Tahsildar Mangaluru sees 1 dept reminder with target_department='Mangaluru'. ADC sees 3 oversight 'Pending >2 Days — SP/Forest/Tahsildar (Mangaluru)' (type=reminder_oversight). DC sees same 3 oversight notifications. Admin sees oversight entries too. 403 for sp; 404 for nonexistent id; 400 for draft (not in submitted/delayed). Push notifications attempted as evidenced by backend logs."
+
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 1
+  test_sequence: 2
   run_ui: false
 
 test_plan:
-  current_focus:
-    []
+  current_focus: []
   stuck_tasks:
     []
   test_all: false
@@ -414,3 +459,7 @@ agent_communication:
     message: "✅ LOGIN CONFIG ENDPOINT TESTING COMPLETE (10/10 - 100% SUCCESS RATE)! Comprehensive testing of public login config and admin config management: 1) GET /api/public/login-config working perfectly (no auth required) - returns all expected roles (case_worker, admin, sp, forest_officer, adc, dc, tahsildar) and tahsildar_locations array with 9 locations, 2) Admin login successful, 3) GET /api/admin/config working correctly, 4) PUT /api/admin/config successfully updates role labels (tested SP label change), 5) Public endpoint immediately reflects admin config changes, 6) Config changes can be reverted successfully. RESOLVED: The previously stuck 'Admin Config API - Minor serialization issue with MongoDB ObjectId' has been fixed - all admin config endpoints are fully functional!"
   - agent: "testing"
     message: "🎉 PUSH NOTIFICATION TESTING COMPLETE (15/15 - 100% SUCCESS RATE)! Comprehensive testing of the new Push Notification feature passed all scenarios: ✅ All user logins successful (caseworker, sp, ADC, admin) ✅ Push token registration working for all users with proper ExponentPushToken format validation ✅ Token storage verified in push_tokens collection ✅ Invalid token correctly rejected with 400 status ✅ Unauthenticated requests rejected with 401 status ✅ File creation and submission triggers push notifications (verified in backend logs: 'Push notification sent to 1 devices. Response: 200') ✅ SP approval submission triggers push notifications to ADC ✅ Backend remains responsive after push operations ✅ Expo Push API integration working correctly with proper error handling. Push notifications are fully functional and production-ready!"
+  - agent: "main"
+    message: "NEW FEATURE: Automatic 2-Day Reminder System. Enhanced reminder_and_escalation_task background loop runs every 1hr. For pending approvals older than 2 days, sends in-app + push notifications to (a) dept officer (Tahsildar/SP/Forest_officer) AND (b) oversight roles (ADC, DC, Admin). Reminders continue indefinitely until acted upon. 30-day deadline escalation also pushes to admin/adc/dc. Two new admin endpoints: POST /api/admin/trigger-reminders (sweep all eligible files) and POST /api/admin/force-reminder/{file_id} (force-send for one file, bypassing 2-day check). To TEST WITHOUT WAITING 2 DAYS: 1) Login admin (admin/admin123), 2) Login caseworker (caseworker/case123), create file with depts=[tahsildar,sp,forest], 3) Submit the file (this sets last_reminder_at to now), 4) As admin call POST /api/admin/force-reminder/{file_id} - should return reminders_sent>0, 5) Login as sp/forest/tahsildar/adc/dc/admin and check GET /api/notifications - should find 'reminder' (dept) and 'reminder_oversight' (ADC/DC/Admin) entries. 6) Also test POST /api/admin/trigger-reminders - if no approval is older than 2 days, reminders_sent should be 0 (verifies the 2-day threshold). 7) Verify only admin can call these endpoints (403 for other roles). All push notifications logged in backend logs."
+  - agent: "testing"
+    message: "🎉 2-DAY REMINDER SYSTEM TESTING COMPLETE (24/24 — 100% SUCCESS). Test file DK/FILE/2026/REM5760xx created, submitted with departments=[tahsildar,sp,forest], priority=high. Results: ✅ Background task starts on boot ('Reminder task started (check every 3600s, threshold 172800s)' in supervisor logs). ✅ POST /api/admin/trigger-reminders → 200 {message,reminders_sent:0} for just-submitted file (2-day threshold enforced). ✅ trigger-reminders returns 403 for caseworker and sp. ✅ POST /api/admin/force-reminder/{id} → 200 {reminders_sent:3} as admin; 403 for sp; 404 for nonexistent id; 400 for draft. ✅ Dept-officer notifications type='reminder', title='Reminder: Pending Review', message contains file_number — visible to SP (target_role=sp), Forest (target_role='forest_officer' NOT 'forest'), Tahsildar Mangaluru (target_department='Mangaluru'). ✅ Oversight notifications type='reminder_oversight', titles 'Pending >2 Days — SP/Forest/Tahsildar (Mangaluru)' — ADC sees all 3, DC sees all 3, Admin sees them too. ✅ Push notifications attempted — backend logs show many 'Push notification sent to N devices. Response: 200' lines plus 'No push tokens found for roles [forest_officer]' confirming forest mapping. ✅ Second trigger-reminders right after force-reminder still returns 0, confirming last_reminder_at refresh blocks duplicate sweep. All three backend_v2 tasks are working — no critical issues found. Test script at /app/backend_test.py."
