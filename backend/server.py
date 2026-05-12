@@ -31,6 +31,14 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
 
+# Fixed namespace so seeded user UUIDs are deterministic across environments / re-seeds.
+# Same username → same UUID, every time. This protects historical references
+# (files.created_by, audit_logs.user_id, etc.) when the database is reset (e.g. after a fork).
+SEED_NAMESPACE = uuid.UUID("8b9d5e76-1b3d-4c6c-9c3a-7e1f9b2a4d10")
+
+def deterministic_user_id(username: str) -> str:
+    return str(uuid.uuid5(SEED_NAMESPACE, username))
+
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
@@ -181,7 +189,7 @@ async def seed_default_users():
 
     for u in default_users:
         await db.users.insert_one({
-            "id": str(uuid.uuid4()),
+            "id": deterministic_user_id(u["username"]),
             "username": u["username"],
             "password_hash": hash_password(u["password"]),
             "role": u["role"],
@@ -192,6 +200,58 @@ async def seed_default_users():
         })
 
     logger.info("Seeded %d default users", len(default_users))
+
+
+async def migrate_to_deterministic_user_ids():
+    """One-time migration: if a default user exists with a random UUID, remap all
+    foreign references (files.created_by, approvals.decided_by, audit_logs.user_id,
+    files.adc_remark_by, files.dc_decided_by, push_tokens.user_id) to the new
+    deterministic UUID, then update the user's id.
+
+    Idempotent: a user whose id already matches deterministic_user_id is skipped.
+    """
+    default_usernames = [
+        "admin", "caseworker",
+        "tah_mangaluru", "tah_bantwal", "tah_mulki", "tah_moodabidri",
+        "tah_puttur", "tah_sulya", "tah_kadaba", "tah_ullala", "tah_belthangady",
+        "forest", "sp", "adc", "dc",
+    ]
+    migrated = 0
+    for username in default_usernames:
+        user = await db.users.find_one({"username": username}, {"_id": 0})
+        if not user:
+            continue
+        new_id = deterministic_user_id(username)
+        old_id = user["id"]
+        if old_id == new_id:
+            continue  # already correct
+
+        # Guard: ensure no collision (another user already has new_id)
+        collision = await db.users.find_one({"id": new_id}, {"_id": 0})
+        if collision and collision["username"] != username:
+            logger.warning(
+                "Skipping ID migration for %s: target id %s already used by %s",
+                username, new_id, collision["username"]
+            )
+            continue
+
+        # Remap foreign-key references across all relevant collections
+        await db.files.update_many({"created_by": old_id}, {"$set": {"created_by": new_id}})
+        await db.files.update_many({"adc_remark_by": old_id}, {"$set": {"adc_remark_by": new_id}})
+        await db.files.update_many({"dc_decided_by": old_id}, {"$set": {"dc_decided_by": new_id}})
+        await db.approvals.update_many({"decided_by": old_id}, {"$set": {"decided_by": new_id}})
+        await db.audit_logs.update_many({"user_id": old_id}, {"$set": {"user_id": new_id}})
+        await db.push_tokens.update_many({"user_id": old_id}, {"$set": {"user_id": new_id}})
+
+        # Finally update the user's own id
+        await db.users.update_one({"username": username}, {"$set": {"id": new_id}})
+        migrated += 1
+        logger.info("Migrated user '%s' to deterministic id %s", username, new_id)
+
+    if migrated:
+        logger.info("Deterministic-ID migration complete: %d user(s) remapped", migrated)
+    else:
+        logger.info("Deterministic-ID migration: no changes needed")
 
 # ==================== PUBLIC CONFIG (no auth) ====================
 
@@ -1296,6 +1356,7 @@ async def admin_force_reminder(file_id: str, user=Depends(require_admin)):
 @app.on_event("startup")
 async def startup():
     await seed_default_users()
+    await migrate_to_deterministic_user_ids()
     asyncio.create_task(reminder_and_escalation_task())
     logger.info("Application started")
 
