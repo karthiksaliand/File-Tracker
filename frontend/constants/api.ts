@@ -7,10 +7,12 @@ function getBaseUrl(): string {
   if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location.origin) {
     return window.location.origin;
   }
-  // On mobile (APK): use the env variable set at build time
-  // IMPORTANT: When building APK, set EXPO_PUBLIC_BACKEND_URL in frontend/.env
-  // to match the deployed website URL (e.g., https://your-deployed-url.com)
-  return process.env.EXPO_PUBLIC_BACKEND_URL || 'https://file-approval-hub-1.emergent.host';
+  // On mobile (APK): use the env variable set at build time.
+  // IMPORTANT: EXPO_PUBLIC_BACKEND_URL in frontend/.env MUST match the deployed
+  // website URL so the APK and the web app share the same database.
+  // The hard-coded fallback below is the current production URL — keep it in
+  // sync with the deployment so an APK built without the env var still works.
+  return process.env.EXPO_PUBLIC_BACKEND_URL || 'https://dept-workflow-2.preview.emergentagent.com';
 }
 
 const BASE_URL = getBaseUrl();
